@@ -1,140 +1,51 @@
 'use client';
-
-import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, BookOpen, Brain, Check, ChevronLeft, CircleHelp, Compass, Flame, Library, Lightbulb, ListTree, MessageCircleMore, RotateCcw, Sparkles, Target, UserRound } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-
-type Mode = '故事' | '学生' | '深读';
-type Feedback = '没看懂' | '太简单' | '太啰嗦' | '看看原文';
-
-declare global {
-  interface Document {
-    modelContext?: {
-      registerTool: (tool: {
-        name: string;
-        title: string;
-        description: string;
-        inputSchema: object;
-        annotations: { readOnlyHint: boolean; untrustedContentHint: boolean };
-        execute: (input: unknown) => unknown;
-      }, options?: { signal?: AbortSignal }) => void | Promise<void>;
-    };
-  }
-}
-
-const versions: Record<Mode, { eyebrow: string; body: React.ReactNode }> = {
-  故事: { eyebrow: '为你增强了冲突与悬念', body: <><p>唐僧以为危险已经过去，没想到山路尽头又出现了那个送饭的姑娘。</p><p>孙悟空一眼就认出来了：这不是凡人，而是刚才逃走的白骨精。可在唐僧眼里，悟空举棒的样子，比妖怪更像妖怪。</p><p className="reader-emphasis">真正危险的，也许不只是妖怪——而是师徒之间正在消失的信任。</p></> },
-  学生: { eyebrow: '根据你的弱项，突出人物动机与证据', body: <><p>白骨精第二次变化身份，利用唐僧的善良，让孙悟空看起来像一个滥杀无辜的人。</p><p>孙悟空的行为看似冲动，实际有明确动机：保护唐僧。他能识破妖怪，却无法让师父看见自己看见的事实。这构成了本章最重要的矛盾——能力与信任并不总是同时存在。</p><p className="reader-emphasis">阅读重点：判断人物不能只看行为，还要结合动机和掌握的信息。</p></> },
-  深读: { eyebrow: '把情节连接到更深的主题', body: <><p>三打白骨精表面写降妖，深处却写认知的困境：掌握真相的人，未必拥有解释真相的权力。</p><p>唐僧相信眼前可见的弱者，孙悟空相信火眼金睛揭示的本质。两人都在坚持自己的“正确”，冲突因此不再是善恶之间的冲突，而是两种判断世界的方法之间的冲突。</p><p className="reader-emphasis">想一想：善良如果缺少辨别力，会不会也可能造成伤害？</p></> },
-};
-
-const feedbackCopy: Record<Feedback, string> = {
-  没看懂: '已记下：下一段会减少抽象词，并补充人物关系。',
-  太简单: '已记下：下一段将增加原文比例与推理难度。',
-  太啰嗦: '已记下：下一段会缩短约 25%，保留关键因果。',
-  看看原文: '已切换原著对照。系统会观察哪些句子需要解释。',
-};
-
-export default function Home() {
-  const [mode, setMode] = useState<Mode>('学生');
-  const [feedback, setFeedback] = useState<Feedback | null>(null);
-  const [answer, setAnswer] = useState<number | null>(null);
-  const [submitted, setSubmitted] = useState(false);
-  const [chapter, setChapter] = useState(27);
-  const [original, setOriginal] = useState(false);
-  const [profileVersion, setProfileVersion] = useState(12);
-
-  useEffect(() => {
-    const saved = window.localStorage.getItem('zhiji-reading-state');
-    if (!saved) return;
-    try {
-      const parsed = JSON.parse(saved) as { mode?: Mode; chapter?: number; profileVersion?: number };
-      if (parsed.mode) setMode(parsed.mode);
-      if (parsed.chapter) setChapter(parsed.chapter);
-      if (parsed.profileVersion) setProfileVersion(parsed.profileVersion);
-    } catch {}
-  }, []);
-  useEffect(() => { window.localStorage.setItem('zhiji-reading-state', JSON.stringify({ mode, chapter, profileVersion })); }, [mode, chapter, profileVersion]);
-  useEffect(() => {
-    const context = document.modelContext;
-    if (!context?.registerTool) return;
-    const lifecycle = new AbortController();
-    const register = async () => {
-      await context.registerTool({
-        name: 'set_reading_mode',
-        title: '调整名著讲法',
-        description: '将当前章节切换为故事、学生或深读讲法，并更新可见内容。',
-        inputSchema: { type: 'object', properties: { mode: { type: 'string', enum: ['故事', '学生', '深读'] } }, required: ['mode'], additionalProperties: false },
-        annotations: { readOnlyHint: false, untrustedContentHint: false },
-        execute(input) {
-          const next = (input as { mode?: string })?.mode;
-          if (next !== '故事' && next !== '学生' && next !== '深读') throw new Error('mode 必须是故事、学生或深读');
-          setMode(next);
-          setProfileVersion(v => v + 1);
-          return { mode: next, chapter, status: 'updated' };
-        },
-      }, { signal: lifecycle.signal });
-      await context.registerTool({
-        name: 'record_reading_feedback',
-        title: '记录阅读反馈',
-        description: '记录用户对当前段落的感受，让后续讲法随之调整。',
-        inputSchema: { type: 'object', properties: { feedback: { type: 'string', enum: ['没看懂', '太简单', '太啰嗦', '看看原文'] } }, required: ['feedback'], additionalProperties: false },
-        annotations: { readOnlyHint: false, untrustedContentHint: false },
-        execute(input) {
-          const value = (input as { feedback?: string })?.feedback;
-          if (!value || !(value in feedbackCopy)) throw new Error('feedback 不受支持');
-          respond(value as Feedback);
-          return { feedback: value, profileVersion: profileVersion + 1, status: 'learned' };
-        },
-      }, { signal: lifecycle.signal });
-    };
-    void register().catch(() => undefined);
-    return () => lifecycle.abort();
-  }, [chapter, profileVersion]);
-  const progress = useMemo(() => Math.min(100, 42 + (chapter - 27) * 6), [chapter]);
-
-  function respond(type: Feedback) { setFeedback(type); setProfileVersion(v => v + 1); if (type === '看看原文') setOriginal(true); }
-  function submitAnswer() { if (answer === null) return; setSubmitted(true); setProfileVersion(v => v + 1); }
-  function nextChapter() { setChapter(v => v + 1); setAnswer(null); setSubmitted(false); setFeedback(null); setOriginal(false); }
-
-  return <main className="app-shell">
-    <header className="topbar">
-      <a className="brand" href="#reader" aria-label="知己读书首页"><span className="brand-mark"><BookOpen size={19}/></span><span>知己读书</span><span className="beta">实验版</span></a>
-      <nav className="topnav" aria-label="主导航"><a className="active" href="#reader">正在读</a><a href="#growth">阅读成长</a><a href="#library">发现好书</a></nav>
-      <div className="streak"><Flame size={16}/> 连续阅读 6 天</div>
-      <Button variant="ghost" size="icon" aria-label="个人资料" className="avatar-button"><UserRound size={18}/></Button>
-    </header>
-
-    <section className="workspace" id="reader">
-      <aside className="book-rail" aria-label="章节目录">
-        <Button variant="ghost" size="sm" className="back-button"><ChevronLeft/> 我的书架</Button>
-        <div className="book-cover" role="img" aria-label="西游记，吴承恩著"><span className="cover-kicker">中国古典名著</span><strong>西游记</strong><span className="cover-rule"/><small>吴承恩 · 著</small></div>
-        <div className="book-meta"><div><span>本书进度</span><strong>{progress}%</strong></div><div className="progress-track"><span style={{width:`${progress}%`}}/></div><p>预计还需 3 小时 20 分钟</p></div>
-        <div className="toc"><p className="section-label">当前单元 · 真假与信任</p>{[25,26,27,28,29].map(item => <button key={item} className={item===chapter?'current':item<chapter?'done':''} onClick={()=>setChapter(item)}><span>{item<chapter?<Check size={13}/>:item}</span><div><strong>第 {item} 回</strong><small>{item===27?'三打白骨精':item<27?'山中遇险':'师徒离心'}</small></div></button>)}</div>
-      </aside>
-
-      <article className="reader-panel">
-        <div className="chapter-head"><div><p className="section-label">第 {chapter} 回 · 精读 2/4</p><h1>{chapter===27?'谁看见了真正的妖怪？':'离开之后，谁先后悔？'}</h1></div><div className="mode-switch" aria-label="阅读讲法">{(['故事','学生','深读'] as Mode[]).map(item=><button key={item} className={mode===item?'selected':''} onClick={()=>setMode(item)}>{item}</button>)}</div></div>
-        <div className="adaptive-note"><Sparkles size={15}/> {versions[mode].eyebrow}</div>
-        <div className="story-text">{versions[mode].body}</div>
-        {original && <blockquote className="original-card"><span>原著对照</span>“那大圣棍起处，打倒妖魔，才断绝了灵光。唐僧肉眼凡胎，却只认作伤人。”<small>原文经过节选。划过难句，可以请求另一种解释。</small></blockquote>}
-        <div className="feedback-row" aria-label="调整讲法"><span>这一段读起来怎么样？</span>{(['没看懂','太简单','太啰嗦','看看原文'] as Feedback[]).map(item=><button key={item} className={feedback===item?'picked':''} onClick={()=>respond(item)}>{item==='没看懂'&&<CircleHelp size={15}/>} {item==='太简单'&&<Brain size={15}/>} {item==='太啰嗦'&&<ListTree size={15}/>} {item==='看看原文'&&<BookOpen size={15}/>} {item}</button>)}</div>
-        {feedback&&<div className="learning-toast"><Sparkles size={15}/> {feedbackCopy[feedback]}</div>}
-
-        <section className="question-card">
-          <div className="question-top"><span className="question-icon"><Lightbulb size={18}/></span><div><p>为你出的理解题</p><small>训练你的薄弱项：人物动机</small></div><span className="level-pill">刚刚好</span></div>
-          <h2>孙悟空为什么明知会被师父责怪，仍要打白骨精？</h2>
-          <div className="answers">{['他控制不住自己的脾气','他想证明自己的本领比师父强','他看见了危险，并把保护师父放在被理解之前'].map((item,index)=><button key={item} className={`${answer===index?'chosen':''} ${submitted&&index===2?'correct':''}`} onClick={()=>!submitted&&setAnswer(index)}><span>{String.fromCharCode(65+index)}</span>{item}{submitted&&index===2&&<Check className="answer-check" size={17}/>}</button>)}</div>
-          {submitted?<div className="answer-result"><div><strong>{answer===2?'答对了，而且这正是本章的关键。':'再看一次“保护”和“被理解”的先后关系。'}</strong><p>我发现你能抓住行为背后的动机。下一题会减少提示，让你自己寻找证据。</p></div><Button onClick={nextChapter} className="primary-action">进入下一段 <ArrowRight/></Button></div>:<Button disabled={answer===null} onClick={submitAnswer} className="submit-answer">提交答案</Button>}
-        </section>
-      </article>
-
-      <aside className="insight-rail" id="growth">
-        <div className="profile-card"><div className="profile-title"><div><Sparkles size={17}/></div><span><strong>你的阅读模型</strong><small>已进化至 v{profileVersion}</small></span></div><p className="profile-copy">每次阅读和回答，都在让下一章更适合你。</p><div className="ability-list"><div><span><Target size={15}/> 情节理解</span><strong>82</strong><i><b style={{width:'82%'}}/></i></div><div><span><MessageCircleMore size={15}/> 人物动机</span><strong>61</strong><i><b className="amber" style={{width:submitted?'66%':'61%'}}/></i></div><div><span><Compass size={15}/> 主题思考</span><strong>48</strong><i><b className="violet" style={{width:'48%'}}/></i></div></div><div className="focus-box"><span>本章正在适应</span><strong>用冲突吸引你，用追问训练人物动机</strong></div></div>
-        <div className="next-path"><div className="side-heading"><span><Library size={16}/> 接下来的路径</span><button aria-label="重置推荐"><RotateCcw size={14}/></button></div><ol><li className="now"><span>现在</span><div><strong>识破白骨精</strong><small>人物动机 · 约 6 分钟</small></div></li><li><span>下一步</span><div><strong>被误解后的选择</strong><small>降低提示，寻找原文证据</small></div></li><li><span>之后</span><div><strong>真假美猴王</strong><small>跨章节比较 · 由你的表现决定</small></div></li></ol></div>
-        <div className="principle-card"><Brain size={18}/><div><strong>不会越读越简单</strong><p>系统会逐步减少帮助，让你越来越接近原著。</p></div></div>
-        <img className="concept-art" src="/og.png" alt="打开的古典书页连接出一条不断生长的阅读路径" />
-      </aside>
-    </section>
-  </main>;
-}
+import {useEffect,useState} from 'react';
+import {BookOpen,Check,ChevronLeft,ChevronRight,CircleAlert,RotateCcw,Sparkles,X} from 'lucide-react';
+type Feedback='有点难'|'刚刚好'|'想读深一点';
+type Scene={title:string;paragraphs:string[];original?:string};
+type Option={text:string;correct?:boolean;why:string};
+type Chapter={no:number;title:string;focus:string;scenes:Scene[];question:string;options:Option[]};
+const chapters:Chapter[]=[
+{no:27,title:'三打白骨精',focus:'看清误会怎样一步步形成',scenes:[
+{title:'白虎岭上',paragraphs:['师徒四人离开五庄观，走进白虎岭。唐僧又饿又乏，让孙悟空去找吃的。悟空看见南山有一片熟透的山桃，便让八戒、沙僧照看师父，自己驾云去摘。','山上的白骨精早已盯上唐僧。她知道悟空难对付，便趁他不在，变成一个提着斋饭的年轻女子。八戒闻见饭香立刻动了心。唐僧虽有疑虑，却看不出眼前人藏着危险。']},
+{title:'第一棒',paragraphs:['悟空回来时，一眼认出女子身上的妖气。他不等白骨精靠近师父，举棒便打。白骨精使了脱身法，丢下一具假尸，真身逃回云里。','唐僧没有火眼金睛。他只看见一个送饭女子倒在地上。八戒又说悟空是化斋无功，故意伤人遮掩。唐僧越听越怒，念起紧箍咒。悟空疼得满地打滚，仍坚持说那是妖怪。'],original:'行者认得他是妖精，更不理论，举棒照头便打。那怪使个解尸法，预先走了。'},
+{title:'第二次变化',paragraphs:['白骨精又变成一个老妇人，拄着竹杖来找女儿。唐僧见老人悲痛，再看地上的尸体，更相信悟空闯下大祸。','悟空知道这是同一个妖怪。若不出手，师父就会被抓走。可他再次打下去，也等于让唐僧亲眼看见自己杀死第二个无辜的人。悟空还是挥了棒。妖怪再次留下假尸逃走，唐僧又念紧箍咒，还要赶他离开。']},
+{title:'第三次变化',paragraphs:['白骨精第三次变成老翁，说自己出来寻找妻女。她把前两具假尸串成一段完整的家庭悲剧，唐僧听后更加不忍。','悟空叫来山神土地守住四方，不许妖怪再逃。他一棒打下，白骨精现出一堆白骨，脊梁上写着白骨夫人的名字。妖怪终于死了，悟空也拿出了证据。可是唐僧认为，即使那是妖怪，悟空嗜杀的心仍没有改。他写下贬书，执意赶走徒弟。'],original:'那怪物拖着一条粉骷髅，脊梁上有一行字，叫做白骨夫人。'},
+{title:'离开以前',paragraphs:['悟空嘴上倔强，真到分别时却放不下师父。他求唐僧接受最后一拜，唐僧不肯。他便拔下毫毛，变出几个自己，从四面一齐下拜。','临走前，悟空嘱咐沙僧，如果师父遇到危险，就来花果山找他。随后他翻上筋斗云。妖怪被除掉了，师徒之间的信任却也被打碎了。']}
+],question:'白骨精已经现出原形，唐僧为什么仍然赶走悟空？',options:[{text:'唐僧认为以后再也不会遇到妖怪',why:'唐僧担心的是悟空嗜杀，不是认为以后没有危险。'},{text:'事实真相解决了，行为方式的冲突却没有解决',correct:true,why:'白骨精的身份得到证明，但唐僧仍认为悟空出手太狠。两人的冲突不只是谁真谁假，也在于该怎样行动。'},{text:'悟空主动要求回花果山',why:'悟空多次求情，离开不是他的主动选择。'},{text:'唐僧只相信八戒，从不自己判断',why:'八戒确实挑拨过，唐僧也根据亲眼所见作了判断。'}]},
+{no:28,title:'黑松林遇险',focus:'追踪一个决定带来的后果',scenes:[
+{title:'两边的路',paragraphs:['悟空回到花果山，赶走欺负群猴的猎户，重新整顿洞府。群猴围着大王欢喜，他也摆出自在模样，可一想到唐僧仍在西行，心里并没有真正放下。','另一边，唐僧带着八戒和沙僧继续赶路。少了悟空探路，三人更加谨慎，却还是在黑松林里陷入饥饿。唐僧让八戒去化斋，等了许久不见回来，又让沙僧去找。']},
+{title:'一个人留在林中',paragraphs:['八戒其实走到草地上睡着了。沙僧离开后，唐僧独自坐着，越等越不安。他看见远处有金光，以为那里有寺院，便牵着白马前去。','金光不是寺院，而是波月洞的塔门。唐僧刚走近，就被洞里的小妖捉住。队伍失去辨妖和探路的人，危险便从这个缺口进来了。'],original:'那长老在林间独坐多时，耳热眼跳，身心不安。'},
+{title:'百花羞',paragraphs:['洞中还有一位百花羞公主。十三年前，她被黄袍怪从宝象国掳到这里，一直无法回家。她听说唐僧要往西天去，便暗中想办法搭救。','百花羞劝黄袍怪放唐僧离开，又偷偷写下一封家书，请他带给父母。唐僧因此脱险。八戒和沙僧赶到后，只知道师父曾被捉，还不知道这封信会把他们带进更大的风波。']},
+{title:'危险没有结束',paragraphs:['三人重新会合，表面上已经离开妖洞，真正的问题却没有解决。百花羞仍被困在波月洞，黄袍怪也没有被降伏。','他们带着书信向宝象国前进。唐僧现在不只是逃出来的人，也成了公主与家乡之间唯一的信使。新的责任已经落在他手里。']}
+],question:'唐僧误入波月洞紧接在悟空离队之后，主要有什么作用？',options:[{text:'证明八戒和沙僧完全没有能力',why:'两人仍会救援，“完全没有能力”把一次失误说得过头。'},{text:'说明黄袍怪替白骨精报仇',why:'两只妖怪没有这种关系。'},{text:'让前面的决定迅速显出后果，并推动后续重聚',correct:true,why:'队伍少了最擅长识妖的人，很快遇险。这也为后来请回悟空作了铺垫。'},{text:'用新妖怪结束师徒矛盾',why:'后面的危机恰恰继续发展了师徒分离。'}]},
+{no:29,title:'宝象国捎书',focus:'看一封信怎样推动整段故事',scenes:[
+{title:'回到故国的消息',paragraphs:['唐僧一行来到宝象国，进宫倒换通关文牒。他拿出百花羞的家书。国王读到女儿还活着，悲喜交加。十三年来，宫中只知道公主失踪，却不知道她被困在哪里。','一封信把波月洞里的秘密带进王宫。国王请求唐僧设法救女儿，八戒和沙僧只得重新回到黑松林。']},
+{title:'第一次救援',paragraphs:['八戒和沙僧在洞前叫阵。黄袍怪提刀迎战，三人打得难分难解。百花羞担心父亲派来的人被害，只能在洞中焦急等待。','八戒久战渐渐支撑不住，找借口退走。沙僧独自迎敌，最终被擒。救援没有成功，取经队伍反而又少了一个人。'],original:'公主道：“这是我父王差来的救兵，望大王饶他性命。”'},
+{title:'妖怪走进王宫',paragraphs:['黄袍怪得知书信送到宝象国，决定亲自进宫。他变成一个相貌堂堂的男子，自称百花羞的丈夫，还编出一套故事，说唐僧才是伤人的虎精。','外表、身份和叙述都被他安排得十分周全。满朝文武看见的是有礼的驸马，没有人从面貌上认出妖怪。真实和看起来真实，并不是一回事。']},
+{title:'局势倒转',paragraphs:['黄袍怪施展法术，把唐僧变成一只斑斓猛虎。众人亲眼见到变化后的模样，立刻相信了妖怪的话。唐僧被关进铁笼，无法开口为自己辩解。','沙僧被困，八戒失散，悟空远在花果山。百花羞的信原本打开了求救之门，也逼得黄袍怪走到台前。故事到了最危险的地方。']}
+],question:'百花羞的家书最重要的作用是什么？',options:[{text:'告诉八戒怎样破解法术',why:'信里没有降妖方法。'},{text:'让国王误认唐僧是妖怪',why:'误会来自黄袍怪后来的诬陷。'},{text:'证明百花羞可以自由离开',why:'她仍被控制，所以才秘密求救。'},{text:'连接洞府与王宫，让隐藏的困境变成公开行动',correct:true,why:'国王由此知道女儿活着，救援也因此开始。'}]},
+{no:30,title:'邪魔侵正法',focus:'比较人物在危机中的判断',scenes:[
+{title:'铁笼里的老虎',paragraphs:['唐僧被变成老虎，只能伏在铁笼里。宫里的人把他当作妖怪，真正的黄袍怪却以驸马身份坐在席上。真假完全颠倒。','八戒回到驿馆，听说师父被关，先想到大家分行李散伙。白龙马听见后，从槽中挣脱出来，决定自己进宫探看。']},
+{title:'白龙马夜战',paragraphs:['夜里，白龙马化作宫女，带剑接近黄袍怪。他假装献舞，忽然出手。黄袍怪很快识破，两人在殿中交战。白龙马敌不过他，腿上受伤，只能逃回驿馆。'],original:'那龙马抖擞精神，变做一个宫娥模样，进宫寻那妖魔。'},
+{title:'谁才是需要的人',paragraphs:['白龙马受了伤，却没有因为失败赌气。他告诉八戒，眼下只有请回大师兄，才可能救出师父。','黄袍怪不只武力强，还会变化和诬陷。队伍需要的不是再添一个硬拼的人，而是一个既能降妖，又能看破假象的人。八戒虽然不情愿，最终还是往花果山去了。']},
+{title:'去请被赶走的人',paragraphs:['八戒越接近花果山，心里越没底。他知道悟空记得贬书，也知道自己当初说过风凉话。现在请悟空回来，就得承认队伍少不了他。','悟空见到八戒，先装作不在意。可他听说唐僧被变成老虎，立刻追问事情经过。嘴上的拒绝和心里的牵挂，同时摆在八戒面前。']}
+],question:'白龙马为什么坚持请回悟空？',options:[{text:'悟空排行第一，必须先出手',why:'身份次序不是重点。'},{text:'悟空熟悉宝象国',why:'悟空此前没有来过。'},{text:'既要降妖又要识破变化，正需要悟空的长处',correct:true,why:'黄袍怪靠变化颠倒真假，悟空的眼力和本领都不可替代。'},{text:'让八戒离开，好让白龙马逃走',why:'白龙马是在组织救援。'}]},
+{no:31,title:'义激美猴王',focus:'评价一个并不完美的好办法',scenes:[
+{title:'软话请不动',paragraphs:['八戒来到水帘洞，说师父有难，请悟空回去。悟空记着被逐的委屈，故意说取经与他无关，还叫小猴赶走八戒。','八戒换着法子求情，悟空仍不答应。不过每当说到唐僧的处境，悟空都会追问细节。八戒看明白，悟空不是不牵挂，只是不愿轻易跨过伤心的门槛。']},
+{title:'请将不如激将',paragraphs:['八戒故意说黄袍怪不仅抓了唐僧，还指名辱骂孙悟空，说他不敢来战。悟空明知八戒可能添油加醋，还是提起金箍棒出了洞。','八戒的话不完全诚实，却击中了悟空的骄傲，也给了他一个回去的理由。悟空可以说自己不是向唐僧低头，而是去找妖怪算账。'],original:'八戒思量道：“请将不如激将，等我激他一激。”'},
+{title:'找回真相',paragraphs:['悟空来到宝象国，先救出沙僧，又让众人看见笼中虎其实是唐僧。','随后悟空上天查访，才知道黄袍怪原是二十八宿中的奎木狼。天兵将他收回，唐僧恢复原形。靠变化制造的假象，终于一层层被揭开。']},
+{title:'重新上路',paragraphs:['唐僧见到悟空，既惭愧又欢喜。悟空没有反复追问谁对谁错，而是重新收拾行李，护着师父上路。','从白虎岭到宝象国，师徒绕了很大一圈，才明白彼此的本领和性情不能简单替代。队伍恢复原样，对信任、判断和求助的认识却已不同。']}
+],question:'怎样评价八戒用激将法请回悟空？',options:[{text:'结果好，所以说谎完全没问题',why:'好的结果不会让手段自动变得没有争议。'},{text:'既利用悟空的骄傲，也看准他仍牵挂师父',correct:true,why:'八戒同时懂得悟空好胜的一面和放不下师父的一面。'},{text:'八戒只想看热闹',why:'他的核心目标仍是救师父。'},{text:'悟空完全相信了八戒',why:'悟空知道八戒可能添话。'}]}
+];
+const feedbackText:Record<Feedback,string>={'有点难':'下一章会把人物关系说得更明白，并在每个场景补足因果。','刚刚好':'下一章保持现在的节奏和解释密度。','想读深一点':'下一章会少给结论，多留证据让你自己判断。'};
+export default function Home(){const[index,setIndex]=useState(0);const[feedback,setFeedback]=useState<Feedback|null>(null);const[open,setOpen]=useState<string|null>(null);const[selected,setSelected]=useState<number|null>(null);const[submitted,setSubmitted]=useState(false);const[record,setRecord]=useState({right:0,wrong:0});const chapter=chapters[index];const correct=chapter.options.findIndex(x=>x.correct);const passed=submitted&&selected===correct;
+useEffect(()=>{const raw=localStorage.getItem('zhiji-v3');if(raw)try{const s=JSON.parse(raw);setIndex(Math.min(s.index||0,chapters.length-1));setRecord(s.record||{right:0,wrong:0})}catch{}},[]);useEffect(()=>{localStorage.setItem('zhiji-v3',JSON.stringify({index,record}))},[index,record]);
+function check(){if(selected===null||submitted)return;setSubmitted(true);setRecord(v=>selected===correct?{...v,right:v.right+1}:{...v,wrong:v.wrong+1})}function move(n:number){if(n<0||n>=chapters.length)return;setIndex(n);setFeedback(null);setOpen(null);setSelected(null);setSubmitted(false);window.scrollTo({top:0,behavior:'smooth'})}
+return <main className="app-shell" id="top"><header className="topbar"><a href="#top" className="brand"><span><BookOpen size={18}/></span>知己读书</a><div className="progress"><span>《西游记》试读</span><i><b style={{width:`${(index+1)/chapters.length*100}%`}}/></i><small>{index+1} / {chapters.length}</small></div><div className="agent"><span/>文学编辑已核对本章</div></header>
+<nav className="chapter-nav">{chapters.map((x,i)=><button key={x.no} className={i===index?'active':i<index?'read':''} onClick={()=>move(i)}><span>{i<index?<Check size={12}/>:i+1}</span><div><small>第{x.no}回</small><strong>{x.title}</strong></div></button>)}</nav>
+<article className="reader"><section className="chapter-head"><p>第 {chapter.no} 回</p><h1>{chapter.title}</h1><div className="focus"><Sparkles size={15}/><span>完整保留事件经过</span><i/>本章阅读重点：{chapter.focus}</div></section>
+<div className="step-label"><span>1</span><div><strong>读完整章</strong><small>不是摘要。重要段落旁可以打开原文对照。</small></div></div><div className="story">{chapter.scenes.map((scene,j)=>{const key=`${chapter.no}-${j}`;return <section className="scene" key={key}><div className="scene-number">{String(j+1).padStart(2,'0')}</div><div className="scene-body"><h2>{scene.title}</h2>{scene.paragraphs.map((p,k)=><p key={k}>{p}</p>)}{scene.original&&<><button className="original-button" onClick={()=>setOpen(open===key?null:key)}><BookOpen size={14}/>{open===key?'收起原文':'在这里对照原文'}</button>{open===key&&<blockquote><p>{scene.original}</p><small>原文节选不参与个性化改写</small></blockquote>}</>}</div></section>})}</div>
+<section className="after-reading"><div className="step-label"><span>2</span><div><strong>告诉我读感</strong><small>这次反馈会改变下一整章的讲述方式。</small></div></div><div className="feedback-row">{(['有点难','刚刚好','想读深一点'] as Feedback[]).map(x=><button key={x} className={feedback===x?'selected':''} onClick={()=>setFeedback(x)}>{x}</button>)}</div>{feedback&&<p className="learned"><Check size={14}/>{feedbackText[feedback]}</p>}</section>
+<section className="quiz"><div className="step-label"><span>3</span><div><strong>用一道题检验理解</strong><small>选项里有对有错。答错后会告诉你错在哪里。</small></div><em>{record.right} 对 · {record.wrong} 错</em></div><h2>{chapter.question}</h2><div className="options">{chapter.options.map((x,i)=>{const state=submitted?x.correct?'correct':selected===i?'wrong':'':selected===i?'selected':'';return <button key={x.text} className={state} onClick={()=>!submitted&&setSelected(i)}><span>{String.fromCharCode(65+i)}</span><p>{x.text}</p>{submitted&&x.correct&&<Check size={17}/>} {submitted&&selected===i&&!x.correct&&<X size={17}/>}</button>})}</div>{!submitted&&<button className="primary" disabled={selected===null} onClick={check}>提交答案</button>}{submitted&&selected!==null&&<div className={`explanation ${passed?'good':'bad'}`}><CircleAlert size={18}/><div><strong>{passed?'答对了':'这个选项不成立'}</strong><p>{chapter.options[selected].why}</p>{!passed&&<button onClick={()=>{setSelected(null);setSubmitted(false)}}><RotateCcw size={13}/>再选一次</button>}</div></div>}</section>
+<footer><button disabled={index===0} onClick={()=>move(index-1)}><ChevronLeft/>上一章</button><p>{passed?'理解已记录，可以继续了':'答对后进入下一章'}</p><button disabled={!passed||index===chapters.length-1} onClick={()=>move(index+1)}>下一章<ChevronRight/></button></footer></article></main>}
