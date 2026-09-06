@@ -1,1 +1,1 @@
-export {LibraryPage as default} from '../page';
+export { LibraryPage as default } from '../page';

@@ -1,11 +1,19 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { BookOpen, Check, FileText, LogOut, Upload } from 'lucide-react';
+import {
+  BookOpen,
+  Check,
+  FileText,
+  LogOut,
+  Search,
+  Upload,
+} from 'lucide-react';
 
 type ShelfBook = {
   id: string;
   title: string;
   source: string;
+  sourceUrl?: string | null;
   size: number;
   progress: number;
   status: string;
@@ -66,16 +74,22 @@ export default function ShelfClient({
           </a>
           <a href="/profile">阅读画像</a>
         </nav>
-        <a
-          className="account-pill"
-          href="/signout-with-chatgpt?return_to=/"
-          target="_top"
-          title="退出登录"
-        >
-          <span>{displayName.slice(0, 1).toUpperCase()}</span>
-          <b>{email}</b>
-          <LogOut size={15} />
-        </a>
+        <div className="nav-actions">
+          <a className="nav-search" href="/discover" aria-label="搜索书籍">
+            <Search size={18} />
+            <span>搜索</span>
+          </a>
+          <a
+            className="account-pill"
+            href="/signout-with-chatgpt?return_to=/"
+            target="_top"
+            title="退出登录"
+          >
+            <span>{displayName.slice(0, 1).toUpperCase()}</span>
+            <b>{email}</b>
+            <LogOut size={15} />
+          </a>
+        </div>
       </header>
       <section className="shelf-head">
         <div>
@@ -123,7 +137,16 @@ export default function ShelfClient({
               </i>
               <small>阅读进度 {book.progress}%</small>
             </div>
-            <button>准备第一章</button>
+            <a
+              className="continue-reading"
+              href={
+                book.sourceUrl
+                  ? `/read?title=${encodeURIComponent(book.title)}&source=${encodeURIComponent(book.sourceUrl)}&available=1`
+                  : `/pdf?id=${encodeURIComponent(book.id)}&title=${encodeURIComponent(book.title)}`
+              }
+            >
+              继续阅读
+            </a>
           </article>
         ))}
         {!books.length && !busy && (

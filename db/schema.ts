@@ -16,6 +16,7 @@ export const shelfBooks = sqliteTable(
     userId: text('user_id').notNull(),
     title: text('title').notNull(),
     source: text('source').notNull(),
+    sourceUrl: text('source_url'),
     fileKey: text('file_key'),
     contentType: text('content_type'),
     size: integer('size').notNull().default(0),

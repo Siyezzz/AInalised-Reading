@@ -1,4 +1,4 @@
-import { BookOpen, LogIn } from 'lucide-react';
+import { BookOpen, LogIn, Search } from 'lucide-react';
 import { chatGPTSignInPath, getChatGPTUser } from '../chatgpt-auth';
 import ProfileClient from './profile-client';
 
@@ -23,10 +23,14 @@ export default async function ProfilePage() {
               阅读画像
             </a>
           </nav>
+          <a className="nav-search" href="/discover" aria-label="搜索书籍">
+            <Search size={18} />
+            <span>搜索</span>
+          </a>
         </header>
         <section className="signin-card">
           <span className="eyebrow">阅读画像</span>
-          <h1>登录后，每本书都能接着认识你</h1>
+          <h1>登录后，阅读设置会一直保留</h1>
           <p>
             你的阅读目标、擅长之处、常错问题和兴趣会保存到账号，下次换设备也不会丢。
           </p>

@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { BookOpen, Check, ChevronRight } from 'lucide-react';
+import { BookOpen, Check, ChevronRight, Search } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 
 export default function ProfileClient({ email }: { email: string }) {
@@ -49,7 +49,13 @@ export default function ProfileClient({ email }: { email: string }) {
             阅读画像
           </a>
         </nav>
-        <span className="signed-email">{email}</span>
+        <div className="nav-actions">
+          <a className="nav-search" href="/discover" aria-label="搜索书籍">
+            <Search size={18} />
+            <span>搜索</span>
+          </a>
+          <span className="signed-email">{email}</span>
+        </div>
       </header>
       <section className="profile-layout">
         <div className="profile-form">
@@ -104,7 +110,7 @@ export default function ProfileClient({ email }: { email: string }) {
           </button>
         </div>
         <aside className="profile-insight">
-          <span>知己目前的判断</span>
+          <span>当前阅读画像</span>
           <div>
             <strong>优势</strong>
             <p>

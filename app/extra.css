@@ -5,6 +5,6 @@
   object-position: 72% 64%;
   border: 1px solid #d7d6cd;
   border-radius: 14px;
-  filter: saturate(.85);
-  box-shadow: 0 10px 30px rgba(27, 53, 45, .08);
+  filter: saturate(0.85);
+  box-shadow: 0 10px 30px rgba(27, 53, 45, 0.08);
 }

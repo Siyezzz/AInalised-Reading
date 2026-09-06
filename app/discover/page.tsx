@@ -63,9 +63,19 @@ export default function DiscoverPage() {
           <a href="/shelf">我的书架</a>
           <a href="/profile">阅读画像</a>
         </nav>
-        <a className="demo-link" href="/demo">
-          看《西游记》演示
-        </a>
+        <div className="nav-actions">
+          <a
+            className="nav-search active"
+            href="/discover"
+            aria-label="搜索书籍"
+          >
+            <Search size={18} />
+            <span>搜索</span>
+          </a>
+          <a className="demo-link" href="/demo">
+            看《西游记》演示
+          </a>
+        </div>
       </header>
       <section className="discover-head">
         <span className="eyebrow">全网找书</span>
@@ -169,8 +179,10 @@ export default function DiscoverPage() {
                 >
                   查看馆藏
                 </a>
-                <a href={`/profile?book=${encodeURIComponent(work.title)}`}>
-                  按我的方式准备
+                <a
+                  href={`/read?title=${encodeURIComponent(work.title)}&source=${encodeURIComponent(`https://openlibrary.org${work.key}`)}&available=${work.public_scan_b || work.ebook_access === 'public' ? '1' : '0'}`}
+                >
+                  开始阅读
                 </a>
               </div>
             </article>
@@ -180,7 +192,7 @@ export default function DiscoverPage() {
             <strong>图书馆暂时没有准确结果</strong>
             <p>
               可以继续查看上方的维基文库和 Project
-              Gutenberg。知己不会把无法确认版权的下载链接当作免费资源。
+              Gutenberg。版权状态不明确的结果只显示馆藏信息，不提供下载。
             </p>
           </div>
         )}

@@ -1,0 +1,1 @@
+ALTER TABLE `shelf_books` ADD `source_url` text;

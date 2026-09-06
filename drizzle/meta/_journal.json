@@ -15,6 +15,13 @@
       "when": 1788678769228,
       "tag": "0001_jazzy_cyclops",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788697406481,
+      "tag": "0002_medical_edwin_jarvis",
+      "breakpoints": true
     }
   ]
 }

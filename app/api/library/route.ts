@@ -5,7 +5,7 @@ export async function GET() {
   const user = await getChatGPTUser();
   if (!user) return Response.json({ error: '请先登录' }, { status: 401 });
   const result = await env.DB.prepare(
-    'SELECT id,title,source,size,progress,status,created_at AS createdAt FROM shelf_books WHERE user_id = ? ORDER BY created_at DESC',
+    'SELECT id,title,source,source_url AS sourceUrl,size,progress,status,created_at AS createdAt FROM shelf_books WHERE user_id = ? ORDER BY created_at DESC',
   )
     .bind(user.userId)
     .all();
@@ -15,6 +15,62 @@ export async function GET() {
 export async function POST(request: Request) {
   const user = await getChatGPTUser();
   if (!user) return Response.json({ error: '请先登录' }, { status: 401 });
+  if (request.headers.get('content-type')?.includes('application/json')) {
+    const body = (await request.json()) as {
+      title?: string;
+      sourceUrl?: string;
+    };
+    const title = body.title?.trim().slice(0, 180);
+    const sourceUrl = body.sourceUrl?.trim();
+    if (!title || !sourceUrl)
+      return Response.json({ error: '缺少书名或来源' }, { status: 400 });
+    let source: URL;
+    try {
+      source = new URL(sourceUrl);
+    } catch {
+      return Response.json({ error: '来源地址无效' }, { status: 400 });
+    }
+    if (
+      !['openlibrary.org', 'www.gutenberg.org', 'zh.wikisource.org'].includes(
+        source.hostname,
+      )
+    )
+      return Response.json({ error: '暂不支持这个来源' }, { status: 400 });
+    const id = crypto.randomUUID();
+    const now = Date.now();
+    await env.DB.prepare(
+      'INSERT INTO shelf_books (id,user_id,title,source,source_url,file_key,content_type,size,progress,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+    )
+      .bind(
+        id,
+        user.userId,
+        title,
+        source.hostname,
+        source.href,
+        null,
+        'text/html',
+        0,
+        0,
+        '正在阅读',
+        now,
+      )
+      .run();
+    return Response.json(
+      {
+        book: {
+          id,
+          title,
+          source: source.hostname,
+          sourceUrl: source.href,
+          size: 0,
+          progress: 0,
+          status: '正在阅读',
+          createdAt: now,
+        },
+      },
+      { status: 201 },
+    );
+  }
   const form = await request.formData();
   const file = form.get('file');
   if (!(file instanceof File))
@@ -35,13 +91,14 @@ export async function POST(request: Request) {
   });
   try {
     await env.DB.prepare(
-      'INSERT INTO shelf_books (id,user_id,title,source,file_key,content_type,size,progress,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+      'INSERT INTO shelf_books (id,user_id,title,source,source_url,file_key,content_type,size,progress,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
     )
       .bind(
         id,
         user.userId,
         safeTitle,
         '个人 PDF',
+        null,
         key,
         'application/pdf',
         file.size,

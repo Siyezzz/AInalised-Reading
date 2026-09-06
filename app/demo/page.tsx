@@ -1,1 +1,1 @@
-export {DemoReader as default} from '../page';
+export { DemoReader as default } from '../page';

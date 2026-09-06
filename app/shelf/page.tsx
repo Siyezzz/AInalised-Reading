@@ -1,4 +1,4 @@
-import { BookOpen, LogIn } from 'lucide-react';
+import { BookOpen, LogIn, Search } from 'lucide-react';
 import { chatGPTSignInPath, getChatGPTUser } from '../chatgpt-auth';
 import ShelfClient from './shelf-client';
 
@@ -24,16 +24,17 @@ export default async function ShelfPage() {
             </a>
             <a href="/profile">阅读画像</a>
           </nav>
-          <a className="demo-link" href="/demo">
-            看《西游记》演示
+          <a className="nav-search" href="/discover" aria-label="搜索书籍">
+            <Search size={18} />
+            <span>搜索</span>
           </a>
         </header>
         <section className="signin-card">
           <span className="eyebrow">个人书架</span>
           <h1>登录后，书才会一直记得你</h1>
           <p>
-            使用 ChatGPT 账号登录。知己会读取账号中的邮箱作为身份标识，把
-            PDF、阅读进度和个人画像安全地分开保存。
+            使用 ChatGPT 账号登录。系统会用账号邮箱识别你的身份，并分别保存
+            PDF、阅读进度和个人画像。
           </p>
           <a href={chatGPTSignInPath('/shelf')} target="_top">
             <LogIn size={17} />

@@ -7,6 +7,7 @@ import {
   ChevronRight,
   CircleAlert,
   RotateCcw,
+  Search,
   Sparkles,
   X,
 } from 'lucide-react';
@@ -438,8 +439,12 @@ export function DemoReader() {
           </small>
         </div>
         <div className="agent">
-          <span />
-          文学编辑已核对本章
+          <a className="reader-search" href="/discover" aria-label="搜索书籍">
+            <Search size={17} />
+            搜索
+          </a>
+          <i />
+          本章内容已核对
         </div>
       </header>
       <nav className="chapter-nav">
@@ -911,9 +916,15 @@ function SiteNav({ active }: { active: 'home' | 'library' | 'profile' }) {
           阅读画像
         </a>
       </nav>
-      <a className="demo-link" href="/demo">
-        看《西游记》演示
-      </a>
+      <div className="nav-actions">
+        <a className="nav-search" href="/discover" aria-label="搜索书籍">
+          <Search size={18} />
+          <span>搜索</span>
+        </a>
+        <a className="demo-link" href="/demo">
+          看《西游记》演示
+        </a>
+      </div>
     </header>
   );
 }
@@ -984,7 +995,7 @@ export default function Home() {
         </div>
         <aside className="reading-note">
           <div className="note-top">
-            <span>知己正在认识你</span>
+            <span>你的阅读画像</span>
             <i>持续更新</i>
           </div>
           <strong>
@@ -996,7 +1007,7 @@ export default function Home() {
           <strong>
             <b>03</b> 哪类问题容易判断错
           </strong>
-          <p>你每一次选择和反馈，都会改变下一章。</p>
+          <p>每次选择和反馈，都会用于调整后续章节。</p>
         </aside>
       </section>
       <section className="home-books" data-reveal>
@@ -1035,9 +1046,9 @@ export default function Home() {
         <div>
           <span className="eyebrow">不是一次性的推荐</span>
           <h2>
-            你越读，它越懂
+            读得越多，讲法越适合你
             <br />
-            怎样把书讲给你
+            每本书都会延续这些调整
           </h2>
         </div>
         <ol>
@@ -1114,7 +1125,7 @@ export function LibraryPage() {
       {books.length === 0 && (
         <div className="empty-library">
           <strong>书库里暂时没有这本</strong>
-          <p>已经记下你的搜索。演示阶段可以先从现有书目选择。</p>
+          <p>暂时没有匹配的站内书目，可以使用顶部搜索继续查找公开资源。</p>
         </div>
       )}
     </main>
@@ -1206,7 +1217,7 @@ export function ProfilePage() {
           </button>
         </div>
         <aside className="profile-insight">
-          <span>知己目前的判断</span>
+          <span>当前阅读画像</span>
           <div>
             <strong>优势</strong>
             <p>
