@@ -1,0 +1,1 @@
+CREATE INDEX `idx_shelf_books_user_created` ON `shelf_books` (`user_id`,`created_at`);
