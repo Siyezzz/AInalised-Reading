@@ -72,6 +72,11 @@ export default function ReadClient() {
         {status === 'error' && (
           <p className="inline-notice">没有保存成功，请稍后再试。</p>
         )}
+        {status === 'saved' && (
+          <p className="inline-notice success-notice">
+            已经保存好了。<a href="/shelf">去我的书架</a>
+          </p>
+        )}
       </section>
       <section className="reading-guide">
         <div>

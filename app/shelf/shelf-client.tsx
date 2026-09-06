@@ -148,7 +148,9 @@ export default function ShelfClient({
               <span>{book.source}</span>
               <h2>{book.title}</h2>
               <p>
-                {(book.size / 1024 / 1024).toFixed(1)} MB · {book.status}
+                {book.sourceUrl
+                  ? `在线来源 · ${book.status}`
+                  : `${(book.size / 1024 / 1024).toFixed(1)} MB · ${book.status}`}
               </p>
               <i>
                 <b style={{ width: `${book.progress}%` }} />

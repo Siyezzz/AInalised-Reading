@@ -9,18 +9,18 @@ export default function BrandMark({ size = 20 }: { size?: number }) {
       aria-hidden="true"
     >
       <path
-        d="M12 20.1C9.8 17.8 4.2 14.6 4.2 9.3c0-2.6 1.7-4.3 4-4.3 1.7 0 3.1.9 3.8 2.2.7-1.3 2.1-2.2 3.8-2.2 2.3 0 4 1.7 4 4.3 0 5.3-5.6 8.5-7.8 10.8Z"
+        d="M4.5 5.8c3.2-.1 5.7.7 7.5 2.5 1.8-1.8 4.3-2.6 7.5-2.5v11.1c-3.2-.1-5.7.7-7.5 2.5-1.8-1.8-4.3-2.6-7.5-2.5V5.8Z"
         stroke="currentColor"
-        strokeWidth="1.65"
+        strokeWidth="1.55"
         strokeLinejoin="round"
       />
       <path
-        d="M7.2 10.2c1.8.1 3.4.8 4.8 2.1 1.4-1.3 3-2 4.8-2.1M12 12.3v5.2"
+        d="M12 8.3v11.1M7.2 9.2c1.6.1 3 .5 4.8 1.8M16.8 9.2c-1.6.1-3 .5-4.8 1.8"
         stroke="currentColor"
-        strokeWidth="1.4"
+        strokeWidth="1.35"
         strokeLinecap="round"
       />
-      <circle cx="12" cy="8.4" r="1.35" fill="#d6aa62" />
+      <circle cx="12" cy="4.2" r="1.45" fill="#d6aa62" />
     </svg>
   );
 }

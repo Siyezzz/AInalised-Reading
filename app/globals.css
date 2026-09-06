@@ -2410,6 +2410,9 @@ body {
 .inline-notice a {
   color: #1d6654;
 }
+.success-notice {
+  color: #2a6857 !important;
+}
 .reading-guide {
   max-width: 1080px;
   margin: 0 auto;

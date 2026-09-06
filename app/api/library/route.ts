@@ -41,6 +41,12 @@ export async function POST(request: Request) {
       ].includes(source.hostname)
     )
       return Response.json({ error: '暂不支持这个来源' }, { status: 400 });
+    const existing = await env.DB.prepare(
+      'SELECT id,title,source,source_url AS sourceUrl,size,progress,status,created_at AS createdAt FROM shelf_books WHERE user_id = ? AND source_url = ? LIMIT 1',
+    )
+      .bind(user.userId, source.href)
+      .first();
+    if (existing) return Response.json({ book: existing, alreadySaved: true });
     const id = crypto.randomUUID();
     const now = Date.now();
     await env.DB.prepare(
