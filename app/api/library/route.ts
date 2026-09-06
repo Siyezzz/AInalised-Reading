@@ -9,7 +9,10 @@ export async function GET() {
   )
     .bind(user.userId)
     .all();
-  return Response.json({ books: result.results });
+  return Response.json(
+    { books: result.results },
+    { headers: { 'cache-control': 'private, no-store' } },
+  );
 }
 
 export async function POST(request: Request) {

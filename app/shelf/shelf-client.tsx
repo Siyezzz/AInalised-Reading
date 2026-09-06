@@ -34,7 +34,7 @@ export default function ShelfClient({
     [loadError, setLoadError] = useState('');
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    fetch('/api/library')
+    fetch('/api/library', { cache: 'no-store', credentials: 'include' })
       .then(async (response) => {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || '书架加载失败');

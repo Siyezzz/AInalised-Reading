@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BookOpen, BookmarkPlus, Check, ExternalLink } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 
@@ -8,22 +8,38 @@ export default function ReadClient() {
   const title = params.get('title') || '未命名书籍';
   const sourceUrl = params.get('source') || '';
   const available = params.get('available') === '1';
+  const attemptedAutoSave = useRef(false);
   const [status, setStatus] = useState<
     'idle' | 'saving' | 'saved' | 'login' | 'error'
   >('idle');
   async function add() {
     setStatus('saving');
-    const response = await fetch('/api/library', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ title, sourceUrl }),
-    });
-    if (response.status === 401) {
-      setStatus('login');
-      return;
+    try {
+      const response = await fetch('/api/library', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title, sourceUrl }),
+      });
+      if (response.status === 401) {
+        setStatus('login');
+        return;
+      }
+      if (!response.ok) throw new Error('save failed');
+      setStatus('saved');
+      window.setTimeout(() => {
+        window.location.href = '/shelf';
+      }, 650);
+    } catch {
+      setStatus('error');
     }
-    setStatus(response.ok ? 'saved' : 'error');
   }
+  useEffect(() => {
+    if (params.get('autosave') === '1' && !attemptedAutoSave.current) {
+      attemptedAutoSave.current = true;
+      void add();
+    }
+  }, []);
   return (
     <>
       <section className="read-hero">
@@ -62,7 +78,7 @@ export default function ReadClient() {
           <p className="inline-notice">
             登录后才能保存。
             <a
-              href={`/signin-with-chatgpt?return_to=${encodeURIComponent(`/read?title=${title}&source=${sourceUrl}&available=${available ? '1' : '0'}`)}`}
+              href={`/signin-with-chatgpt?return_to=${encodeURIComponent(`/read?title=${encodeURIComponent(title)}&source=${encodeURIComponent(sourceUrl)}&available=${available ? '1' : '0'}&autosave=1`)}`}
               target="_top"
             >
               现在登录
