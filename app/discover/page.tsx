@@ -1,8 +1,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { BookOpen, ChevronRight, Library, Search } from 'lucide-react';
+import {
+  BookOpen,
+  ChevronRight,
+  Headphones,
+  Landmark,
+  Library,
+  Search,
+} from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
+import BrandMark from '../brand-mark';
 
 type Work = {
   key: string;
@@ -53,7 +61,7 @@ export default function DiscoverPage() {
       <header className="main-nav">
         <a href="/" className="brand">
           <span>
-            <BookOpen size={18} />
+            <BrandMark size={21} />
           </span>
           知己读书
         </a>
@@ -130,6 +138,42 @@ export default function DiscoverPage() {
           <div>
             <strong>Project Gutenberg</strong>
             <span>多语种公共领域电子书</span>
+          </div>
+          <ChevronRight size={16} />
+        </a>
+        <a
+          href={`https://standardebooks.org/ebooks?query=${q}`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          <BookOpen size={18} />
+          <div>
+            <strong>Standard Ebooks</strong>
+            <span>精校排版的公共领域名著</span>
+          </div>
+          <ChevronRight size={16} />
+        </a>
+        <a
+          href={`https://archive.org/search?query=${q}`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          <Landmark size={18} />
+          <div>
+            <strong>Internet Archive</strong>
+            <span>扫描本、旧版本与馆藏资料</span>
+          </div>
+          <ChevronRight size={16} />
+        </a>
+        <a
+          href={`https://librivox.org/search?title=${q}&author=&reader=&keywords=&genre_id=0&status=all&project_type=either&recorded_language=&sort_order=catalog_date&search_page=1&search_form=advanced`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          <Headphones size={18} />
+          <div>
+            <strong>LibriVox</strong>
+            <span>志愿者录制的公共领域有声书</span>
           </div>
           <ChevronRight size={16} />
         </a>

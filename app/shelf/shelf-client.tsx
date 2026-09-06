@@ -6,8 +6,9 @@ import {
   FileText,
   LogOut,
   Search,
-  Upload,
+  Download,
 } from 'lucide-react';
+import BrandMark from '../brand-mark';
 
 type ShelfBook = {
   id: string;
@@ -28,12 +29,21 @@ export default function ShelfClient({
 }) {
   const [books, setBooks] = useState<ShelfBook[]>([]),
     [busy, setBusy] = useState(false),
-    [message, setMessage] = useState('');
+    [message, setMessage] = useState(''),
+    [loading, setLoading] = useState(true),
+    [loadError, setLoadError] = useState('');
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
     fetch('/api/library')
-      .then((r) => r.json())
-      .then((data) => setBooks(data.books || []));
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || '书架加载失败');
+        setBooks(data.books || []);
+      })
+      .catch((error) =>
+        setLoadError(error instanceof Error ? error.message : '书架加载失败'),
+      )
+      .finally(() => setLoading(false));
   }, []);
   async function upload(file?: File) {
     if (!file) return;
@@ -62,7 +72,7 @@ export default function ShelfClient({
       <header className="main-nav">
         <a href="/" className="brand">
           <span>
-            <BookOpen size={18} />
+            <BrandMark size={21} />
           </span>
           知己读书
         </a>
@@ -102,7 +112,7 @@ export default function ShelfClient({
           </p>
         </div>
         <label className={busy ? 'upload-control busy' : 'upload-control'}>
-          <Upload size={18} />
+          <Download size={18} />
           <span>{busy ? '正在上传' : '导入 PDF'}</span>
           <input
             ref={input}
@@ -120,11 +130,19 @@ export default function ShelfClient({
         </div>
       )}
       <section className="shelf-grid">
+        {loading && <div className="shelf-loading">正在打开你的书架…</div>}
+        {loadError && (
+          <div className="empty-shelf">
+            <h2>书架暂时没有打开</h2>
+            <p>{loadError}。刷新页面再试一次。</p>
+            <button onClick={() => window.location.reload()}>重新加载</button>
+          </div>
+        )}
         {books.map((book) => (
           <article className="shelf-book" key={book.id}>
             <div className="pdf-cover">
-              <FileText size={25} />
-              <small>PDF</small>
+              {book.sourceUrl ? <BookOpen size={25} /> : <FileText size={25} />}
+              <small>{book.sourceUrl ? 'WEB' : 'PDF'}</small>
             </div>
             <div>
               <span>{book.source}</span>
@@ -149,14 +167,11 @@ export default function ShelfClient({
             </a>
           </article>
         ))}
-        {!books.length && !busy && (
+        {!loading && !loadError && !books.length && !busy && (
           <div className="empty-shelf">
             <FileText size={30} />
             <h2>书架还是空的</h2>
-            <p>
-              导入你拥有合法阅读权的
-              PDF。上传后会先识别章节，再根据你的画像准备第一章。
-            </p>
+            <p>从搜索结果开始阅读并加入书架，或导入你拥有合法阅读权的 PDF。</p>
             <button onClick={() => input.current?.click()}>选择 PDF</button>
           </div>
         )}

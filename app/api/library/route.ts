@@ -31,9 +31,14 @@ export async function POST(request: Request) {
       return Response.json({ error: '来源地址无效' }, { status: 400 });
     }
     if (
-      !['openlibrary.org', 'www.gutenberg.org', 'zh.wikisource.org'].includes(
-        source.hostname,
-      )
+      ![
+        'openlibrary.org',
+        'www.gutenberg.org',
+        'zh.wikisource.org',
+        'standardebooks.org',
+        'archive.org',
+        'librivox.org',
+      ].includes(source.hostname)
     )
       return Response.json({ error: '暂不支持这个来源' }, { status: 400 });
     const id = crypto.randomUUID();

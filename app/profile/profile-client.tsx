@@ -1,7 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { BookOpen, Check, ChevronRight, Search } from 'lucide-react';
+import { Check, ChevronRight, Search } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
+import BrandMark from '../brand-mark';
 
 export default function ProfileClient({ email }: { email: string }) {
   const params = useSearchParams();
@@ -37,7 +38,7 @@ export default function ProfileClient({ email }: { email: string }) {
       <header className="main-nav">
         <a href="/" className="brand">
           <span>
-            <BookOpen size={18} />
+            <BrandMark size={21} />
           </span>
           知己读书
         </a>

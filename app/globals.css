@@ -1870,6 +1870,15 @@ body {
   grid-template-columns: repeat(3, 1fr);
   gap: 13px;
 }
+.brand-mark {
+  display: block;
+}
+.shelf-loading {
+  grid-column: 1 / -1;
+  padding: 54px;
+  color: #68756f;
+  text-align: center;
+}
 .source-strip > a {
   display: grid;
   grid-template-columns: auto 1fr auto;

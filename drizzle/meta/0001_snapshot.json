@@ -139,10 +139,7 @@
       "indexes": {
         "idx_shelf_books_user_created": {
           "name": "idx_shelf_books_user_created",
-          "columns": [
-            "user_id",
-            "created_at"
-          ],
+          "columns": ["user_id", "created_at"],
           "isUnique": false
         }
       },

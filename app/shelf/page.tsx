@@ -1,6 +1,7 @@
-import { BookOpen, LogIn, Search } from 'lucide-react';
+import { LogIn, Search } from 'lucide-react';
 import { chatGPTSignInPath, getChatGPTUser } from '../chatgpt-auth';
 import ShelfClient from './shelf-client';
+import BrandMark from '../brand-mark';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,7 +13,7 @@ export default async function ShelfPage() {
         <header className="main-nav">
           <a href="/" className="brand">
             <span>
-              <BookOpen size={18} />
+              <BrandMark size={21} />
             </span>
             知己读书
           </a>

@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
+import BrandMark from './brand-mark';
 type Feedback = '有点难' | '有点长' | '刚刚好' | '想读深一点';
 type Scene = { title: string; paragraphs: string[]; original?: string };
 type Option = { text: string; correct?: boolean; why: string };
@@ -425,7 +426,7 @@ export function DemoReader() {
       <header className="topbar">
         <a href="/" className="brand">
           <span>
-            <BookOpen size={18} />
+            <BrandMark size={21} />
           </span>
           知己读书
         </a>
@@ -900,7 +901,7 @@ function SiteNav({ active }: { active: 'home' | 'library' | 'profile' }) {
     <header className="main-nav">
       <a href="/" className="brand">
         <span>
-          <BookOpen size={18} />
+          <BrandMark size={21} />
         </span>
         知己读书
       </a>

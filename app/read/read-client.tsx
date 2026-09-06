@@ -31,7 +31,7 @@ export default function ReadClient() {
         <h1>{title}</h1>
         <p>
           {available
-            ? '这个版本可以在来源网站阅读全文。你可以先开始读，确定想继续后再放进书架。'
+            ? '先打开原文开始阅读。读到任何位置，都可以回到这里把它加入书架。'
             : '这个结果目前只有馆藏资料，是否能在线借阅以图书馆页面为准。'}
         </p>
         <div className="read-actions">
@@ -75,8 +75,8 @@ export default function ReadClient() {
       </section>
       <section className="reading-guide">
         <div>
-          <small>阅读时可以随时回来</small>
-          <h2>书架不是阅读前的门槛</h2>
+          <small>从阅读开始</small>
+          <h2>先读，再决定是否留下</h2>
         </div>
         <ol>
           <li>
@@ -85,7 +85,7 @@ export default function ReadClient() {
           </li>
           <li>
             <b>02</b>
-            <p>想继续读时，再加入书架保存进度。</p>
+            <p>读到想留下的位置时，把这本书加入书架。</p>
           </li>
           <li>
             <b>03</b>

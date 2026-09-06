@@ -1,5 +1,6 @@
-import { BookOpen, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 import PdfReader from './pdf-reader';
+import BrandMark from '../brand-mark';
 export const dynamic = 'force-dynamic';
 export default function PdfPage() {
   return (
@@ -7,7 +8,7 @@ export default function PdfPage() {
       <header className="main-nav">
         <a href="/" className="brand">
           <span>
-            <BookOpen size={18} />
+            <BrandMark size={21} />
           </span>
           知己读书
         </a>

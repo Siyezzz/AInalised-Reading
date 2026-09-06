@@ -1,5 +1,6 @@
-import { BookOpen, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 import ReadClient from './read-client';
+import BrandMark from '../brand-mark';
 
 export default function ReadPage() {
   return (
@@ -7,7 +8,7 @@ export default function ReadPage() {
       <header className="main-nav">
         <a href="/" className="brand">
           <span>
-            <BookOpen size={18} />
+            <BrandMark size={21} />
           </span>
           知己读书
         </a>

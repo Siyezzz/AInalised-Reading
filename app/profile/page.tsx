@@ -1,6 +1,7 @@
-import { BookOpen, LogIn, Search } from 'lucide-react';
+import { LogIn, Search } from 'lucide-react';
 import { chatGPTSignInPath, getChatGPTUser } from '../chatgpt-auth';
 import ProfileClient from './profile-client';
+import BrandMark from '../brand-mark';
 
 export const dynamic = 'force-dynamic';
 export default async function ProfilePage() {
@@ -11,7 +12,7 @@ export default async function ProfilePage() {
         <header className="main-nav">
           <a href="/" className="brand">
             <span>
-              <BookOpen size={18} />
+              <BrandMark size={21} />
             </span>
             知己读书
           </a>
