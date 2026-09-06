@@ -3,7 +3,7 @@ import './globals.css';
 import './extra.css';
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://zhiji-reading.astute-crow-3846.chatgpt.site'),
+  metadataBase: new URL('https://zhiji-reading.li-siye-0123.chatgpt.site'),
   title: '知己读书｜一本会认识你的书',
   description: '根据你的兴趣、能力和弱点，持续进化讲法、题目与阅读路径的名著伴读平台。',
   openGraph: {
