@@ -10,7 +10,9 @@ export default function ProfileClient({ email }: { email: string }) {
   const [goal, setGoal] = useState('读懂故事'),
     [level, setLevel] = useState('平时会读一些'),
     [likes, setLikes] = useState<string[]>([]),
-    [saved, setSaved] = useState(false);
+    [saved, setSaved] = useState(false),
+    [bookStatus, setBookStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle'),
+    [bookError, setBookError] = useState('');
   useEffect(() => {
     fetch('/api/profile')
       .then((r) => r.json())
@@ -32,6 +34,37 @@ export default function ProfileClient({ email }: { email: string }) {
       body: JSON.stringify({ goal, level, likes }),
     });
     if (response.ok) setSaved(true);
+  }
+  async function addBook() {
+    if (!book || bookStatus === 'saving') return;
+    setBookStatus('saving');
+    setBookError('');
+    const sourceUrl =
+      book === '爱丽丝漫游奇境'
+        ? 'https://www.gutenberg.org/ebooks/928'
+        : `https://openlibrary.org/search?q=${encodeURIComponent(book)}`;
+    try {
+      const profileResponse = await fetch('/api/profile', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ goal, level, likes }),
+      });
+      if (!profileResponse.ok) throw new Error('阅读画像没有保存成功');
+      setSaved(true);
+      const response = await fetch('/api/library', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: book, sourceUrl }),
+      });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(data.error || '书籍没有保存成功');
+      setBookStatus('saved');
+      window.location.href = book === '爱丽丝漫游奇境' ? '/chapter/alice' : '/shelf';
+    } catch (error) {
+      setBookStatus('error');
+      setBookError(error instanceof Error ? error.message : '书籍没有保存成功');
+    }
   }
   return (
     <main className="product-shell">
@@ -139,9 +172,11 @@ export default function ProfileClient({ email }: { email: string }) {
               <p>
                 按“{goal}”目标和“{level}”难度处理完整章节。
               </p>
-              <a href="/shelf">
-                放进我的书架 <ChevronRight size={16} />
-              </a>
+              <button className="profile-add-book" onClick={addBook} disabled={bookStatus === 'saving'}>
+                {bookStatus === 'saving' ? '正在保存' : bookStatus === 'saved' ? '已放入书架' : '放进我的书架'}
+                <ChevronRight size={16} />
+              </button>
+              {bookStatus === 'error' && <p className="profile-save-error">{bookError}，请再试一次。</p>}
             </section>
           )}
         </aside>

@@ -160,7 +160,9 @@ export default function ShelfClient({
             <a
               className="continue-reading"
               href={
-                book.sourceUrl
+                book.title === '爱丽丝漫游奇境'
+                  ? '/chapter/alice'
+                  : book.sourceUrl
                   ? `/read?title=${encodeURIComponent(book.title)}&source=${encodeURIComponent(book.sourceUrl)}&available=1`
                   : `/pdf?id=${encodeURIComponent(book.id)}&title=${encodeURIComponent(book.title)}`
               }
