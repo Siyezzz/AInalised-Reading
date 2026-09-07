@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { BookOpen, CheckCircle2, ExternalLink } from 'lucide-react';
+import { BookOpen, BookmarkPlus, Check, CheckCircle2, ExternalLink } from 'lucide-react';
 
 const paragraphs = [
   '爱丽丝坐在河岸边，姐姐正在看书。她凑过去瞧了瞧，书里既没有图画，也没有对话。这样的书有什么意思呢？天气很热，她困得连思考都嫌麻烦，只能勉强盘算：要不要站起来摘几朵雏菊，编一条花环。',
@@ -18,6 +18,19 @@ const paragraphs = [
 
 export default function AliceChapter() {
   const [answer, setAnswer] = useState<number | null>(null);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'login' | 'error'>('idle');
+  async function saveToShelf() {
+    setSaveStatus('saving');
+    try {
+      const response = await fetch('/api/library', {
+        method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: '爱丽丝漫游奇境', sourceUrl: 'https://www.gutenberg.org/ebooks/928' }),
+      });
+      if (response.status === 401) return setSaveStatus('login');
+      if (!response.ok) throw new Error('save failed');
+      setSaveStatus('saved');
+    } catch { setSaveStatus('error'); }
+  }
   const options = [
     '她缺少危险意识，只是幸运地没有受伤',
     '她会观察异常、尝试推理，但知识和行动仍带着孩子式的不成熟',
@@ -32,6 +45,12 @@ export default function AliceChapter() {
         <h1>掉进兔子洞</h1>
         <p>这一版为“读懂故事”模式。保留原章全部关键事件，把长句、双关和时代距离换成更清楚的中文。</p>
         <div className="source-note"><CheckCircle2 size={18} /><div><b>已核对原文</b><small>依据 Project Gutenberg 公版英文原文第 928 号制作，并参考英国图书馆的作品导读。它是已完成的内容样本，不代表网站已经能自动生成所有书。</small></div></div>
+        <div className="chapter-save-row">
+          <button onClick={saveToShelf} disabled={saveStatus === 'saving' || saveStatus === 'saved'}>{saveStatus === 'saved' ? <Check size={17} /> : <BookmarkPlus size={17} />}{saveStatus === 'saving' ? '正在收藏' : saveStatus === 'saved' ? '已收藏到书架' : '收藏这本书'}</button>
+          <span>先读一读，喜欢再收藏。</span>
+        </div>
+        {saveStatus === 'login' && <p className="chapter-save-message">登录后才能收藏。<a href="/signin-with-chatgpt?return_to=/chapter/alice" target="_top">现在登录</a></p>}
+        {saveStatus === 'error' && <p className="chapter-save-message">没有收藏成功，请再试一次。</p>}
       </header>
       <section className="chapter-body">{paragraphs.map((p, i) => <p key={i}>{p}</p>)}</section>
       <details className="original-source"><summary><BookOpen size={18} />查看原文与核对来源</summary><p>原作第一章标题为 “Down the Rabbit-Hole”。你可以对照完整公版英文文本，检查人物、事件顺序和细节是否准确。</p><div><a href="https://www.gutenberg.org/cache/epub/928/pg928-images.html" target="_blank" rel="noreferrer">Project Gutenberg 原文 <ExternalLink size={14} /></a><a href="https://www.britishlibrary.cn/en/works/alice-in-wonderland/" target="_blank" rel="noreferrer">英国图书馆作品页 <ExternalLink size={14} /></a></div></details>

@@ -1098,6 +1098,12 @@ footer p {
 .source-note svg { flex: none; margin-top: 2px; }
 .source-note b,.source-note small { display: block; }
 .source-note small { margin-top: 5px; color: #62726b; font-size: 13px; line-height: 1.65; }
+.chapter-save-row { display: flex; align-items: center; gap: 14px; margin-top: 20px; }
+.chapter-save-row button { display: inline-flex; align-items: center; gap: 7px; padding: 12px 17px; border: 0; border-radius: 999px; background: #153f35; color: white; cursor: pointer; }
+.chapter-save-row button:disabled { opacity: .72; }
+.chapter-save-row span { color: #6a7771; font-size: 13px; }
+.chapter-save-message { color: #815d2c; font-size: 14px; }
+.chapter-save-message a { margin-left: 6px; color: #286a58; }
 .chapter-body { margin-top: 68px; }
 .chapter-body p { margin: 0 0 1.55em; color: #263b34; font: 400 19px/2 var(--display); letter-spacing: .01em; }
 .chapter-body p:first-child::first-letter { float: left; margin: 8px 9px 0 0; color: #9a6c2e; font-size: 66px; line-height: .72; }
