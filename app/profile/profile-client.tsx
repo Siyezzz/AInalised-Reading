@@ -16,7 +16,7 @@ export default function ProfileClient({ email }: { email: string }) {
   useEffect(() => {
     fetch('/api/profile')
       .then((r) => r.json())
-      .then((data) => {
+      .then((value) => { const data = value as { profile?: { goal: string; level: string; likes: string[] } };
         if (data.profile) {
           setGoal(data.profile.goal);
           setLevel(data.profile.level);
@@ -52,9 +52,7 @@ export default function ProfileClient({ email }: { email: string }) {
       if (!profileResponse.ok) throw new Error('阅读画像没有保存成功');
       setSaved(true);
       window.location.href =
-        book === '爱丽丝漫游奇境'
-          ? '/chapter/alice'
-          : `/adapt?title=${encodeURIComponent(book)}&source=${encodeURIComponent(sourceUrl)}`;
+         `/adapt?title=${encodeURIComponent(book)}&source=${encodeURIComponent(sourceUrl)}`;
     } catch (error) {
       setBookStatus('error');
       setBookError(error instanceof Error ? error.message : '暂时无法开始阅读');

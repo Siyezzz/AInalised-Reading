@@ -3,7 +3,21 @@
   "name": "zhiji-reading-editor",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-07",
-  "compatibility_flags": ["nodejs_compat"],
-  "ai": { "binding": "AI" },
-  "observability": { "enabled": true, "head_sampling_rate": 1 }
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "ai": {
+    "binding": "AI"
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "workflows": [
+    {
+      "binding": "READING",
+      "name": "zhiji-reading-workflow",
+      "class_name": "ReadingWorkflow"
+    }
+  ]
 }

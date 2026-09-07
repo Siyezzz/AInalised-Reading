@@ -41,7 +41,7 @@ export default function ShelfClient({
   useEffect(() => {
     fetch('/api/library', { cache: 'no-store', credentials: 'include' })
       .then(async (response) => {
-        const data = await response.json();
+        const data = await response.json() as { error?: string; books?: ShelfBook[]; book: ShelfBook; readUrl: string };
         if (!response.ok) throw new Error(data.error || '书架加载失败');
         setBooks(data.books || []);
       })
@@ -62,8 +62,7 @@ export default function ShelfClient({
       try {
         extractedText = await extractFirstChapter(file, (value, label) => { setUploadProgress(value); setMessage(label); });
       } catch (extractError) {
-        extractionFailed = true;
-        setMessage('文字提取失败，正在保存原始文件');
+        throw extractError;
       }
       setUploadProgress(64);
       setMessage('正在保存文件');
@@ -73,7 +72,7 @@ export default function ShelfClient({
         method: 'POST',
         body: form,
       });
-      const data = await response.json();
+      const data = await response.json() as { error?: string; book: ShelfBook; readUrl: string };
       if (!response.ok) throw new Error(data.error || '上传失败');
       setBooks((current) => [data.book, ...current]);
       setUploadProgress(100);
@@ -98,7 +97,7 @@ export default function ShelfClient({
     setMessage('');
     try {
       const response = await fetch(`/api/library?id=${encodeURIComponent(book.id)}`, { method: 'DELETE', credentials: 'include' });
-      const data = await response.json();
+      const data = await response.json() as { error?: string; book: ShelfBook; readUrl: string };
       if (!response.ok) throw new Error(data.error || '移除失败');
       setBooks((current) => current.filter((item) => item.id !== book.id));
       setMessage(`《${book.title}》已移出书架`);
@@ -197,7 +196,7 @@ export default function ShelfClient({
               <small>阅读进度 {book.progress}%</small>
             </div>
             <div className="shelf-book-actions">
-              <a className="continue-reading" href={book.title === '爱丽丝漫游奇境' ? '/chapter/alice' : `/adapt?title=${encodeURIComponent(book.title)}&source=${encodeURIComponent(book.sourceUrl || `upload:${book.id}`)}`}>继续阅读</a>
+              <a className="continue-reading" href={`/adapt?title=${encodeURIComponent(book.title)}&source=${encodeURIComponent(book.sourceUrl || `upload:${book.id}`)}`}>继续阅读</a>
               {!book.sourceUrl && <a className="view-original" href={`/pdf?id=${encodeURIComponent(book.id)}&title=${encodeURIComponent(book.title)}`}><Eye size={14} />查看原文</a>}
               <button className="remove-book" onClick={() => removeBook(book)} disabled={removing === book.id} aria-label={`把《${book.title}》移出书架`}><Trash2 size={16} />{removing === book.id ? '正在移除' : '移出'}</button>
             </div>
@@ -215,3 +214,4 @@ export default function ShelfClient({
     </main>
   );
 }
+

@@ -7,7 +7,7 @@ function bytesToBase64Url(bytes: Uint8Array) { let binary = ''; for (const byte 
 function base64UrlToBytes(value: string) { const binary = atob(value.replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(binary, (c) => c.charCodeAt(0)); }
 async function sign(payload: string, secret: string) { const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']); return bytesToBase64Url(new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload)))); }
 async function verifyToken(token: string, secret: string, title: string) { const [version, payload, signature] = token.split('.'); if (version !== 'v1' || !payload || !signature || await sign(payload, secret) !== signature) return false; try { const data = JSON.parse(new TextDecoder().decode(base64UrlToBytes(payload))) as { title?: string; exp?: number }; return data.title === title && Number(data.exp) > Date.now(); } catch { return false; } }
-async function profileAndHash(userId: string, feedback = '', wrongAnswerType = '') { const profile = await env.DB.prepare('SELECT goal,level,likes FROM reader_profiles WHERE user_id = ?').bind(userId).first<{ goal: string; level: string; likes: string }>(); const normalizedProfile = { goal: profile?.goal || '读懂故事', level: profile?.level || '平时会读一些', likes: profile ? JSON.parse(profile.likes) : [] }; const input = JSON.stringify({ normalizedProfile, feedback, wrongAnswerType }); const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input))), (b) => b.toString(16).padStart(2, '0')).join(''); return { normalizedProfile, hash }; }
+async function profileAndHash(userId: string, feedback = '', wrongAnswerType = '') { const profile = await env.DB.prepare('SELECT goal,level,likes FROM reader_profiles WHERE user_id = ?').bind(userId).first<{ goal: string; level: string; likes: string }>(); const normalizedProfile = { goal: profile?.goal || '读懂故事', level: profile?.level || '平时会读一些', likes: profile ? JSON.parse(profile.likes) : [] }; const input = JSON.stringify({ pipeline: 2, normalizedProfile, feedback, wrongAnswerType }); const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input))), (b) => b.toString(16).padStart(2, '0')).join(''); return { normalizedProfile, hash }; }
 function validContent(value: unknown) { const x = value as { chapter?: unknown; quiz?: { options?: unknown } }; return Boolean(x && Array.isArray(x.chapter) && x.chapter.length >= 4 && x.quiz && Array.isArray(x.quiz.options) && x.quiz.options.length === 4); }
 
 export async function POST(request: Request) {
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     if (!object) return Response.json({ error: '这份文件的文字尚未提取，无法进行 AI 改写。请先在书架上查看原文，或重新导入。', needExtraction: true }, { status: 422 });
     sourceText = (await object.text()).slice(0, 80_000);
   }
-  const payload = bytesToBase64Url(new TextEncoder().encode(JSON.stringify({ title, uid: user.userId, exp: Date.now() + 10 * 60_000 })));
+  const payload = bytesToBase64Url(new TextEncoder().encode(JSON.stringify({ title, uid: user.userId, exp: Date.now() + 60 * 60_000 })));
   const token = `v1.${payload}.${await sign(payload, runtime.EDITOR_SECRET)}`;
   return Response.json({ editorUrl: runtime.EDITOR_URL, token, profile: normalizedProfile, sourceText }, { status: 202 });
 }

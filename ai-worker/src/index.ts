@@ -1,23 +1,7 @@
-interface EditorEnv extends Cloudflare.Env { EDITOR_SECRET: string }
-
-const PUBLIC_TEXTS: Record<string, { url: string; start: string; end: string }> = {
-  'Pride and Prejudice': {
-    url: 'https://www.gutenberg.org/cache/epub/1342/pg1342.txt',
-    start: '\nchapter i.]\n',
-    end: '\nchapter ii.\n',
-  },
-};
-
-const WIKISOURCE_CHAPTERS: Record<string, string> = {
-  '红楼梦': '紅樓夢/第001回',
-  '紅樓夢': '紅樓夢/第001回',
-  '西游记': '西遊記/第001回',
-  '西遊記': '西遊記/第001回',
-  '三国演义': '三國演義/第001回',
-  '三國演義': '三國演義/第001回',
-  '水浒传': '水滸傳/第001回',
-  '水滸傳': '水滸傳/第001回',
-};
+import { type JobEnv } from './reading-workflow';
+export { ReadingWorkflow } from './reading-workflow';
+import { resolveSource } from './sources';
+interface EditorEnv extends Cloudflare.Env, JobEnv { EDITOR_SECRET: string; AI: Ai }
 
 const ALLOWED_ORIGINS = new Set([
   'https://zhiji-reading.li-siye-0123.chatgpt.site',
@@ -57,98 +41,6 @@ function parseModelJson(value: string): unknown {
   }
 }
 
-async function readBoundedChapter(config: { url: string; start: string; end: string }) {
-  const response = await fetch(config.url, { headers: { 'user-agent': 'ZhijiReading/1.0' } });
-  if (!response.ok || !response.body) throw new Error('SOURCE_UNAVAILABLE');
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let text = '';
-  while (text.length < 180_000) {
-    const part = await reader.read();
-    if (part.done) break;
-    text += decoder.decode(part.value, { stream: true });
-    const start = text.indexOf(config.start);
-    if (start >= 0 && text.indexOf(config.end, start + config.start.length) >= 0) break;
-  }
-  await reader.cancel();
-  text = text.replace(/\r\n/g, '\n');
-  const comparable = text.toLowerCase();
-  const start = comparable.indexOf(config.start);
-  const end = comparable.indexOf(config.end, start + config.start.length);
-  if (start < 0 || end < 0) throw new Error(`CHAPTER_NOT_FOUND:${text.length}:${text.slice(0, 80).replace(/\s+/g, ' ')}`);
-  return text.slice(start, end).trim().slice(0, 80_000);
-}
-
-async function readWikisourceChapter(page: string) {
-  const url = `https://zh.wikisource.org/w/api.php?action=parse&page=${encodeURIComponent(page)}&prop=wikitext&format=json&formatversion=2&origin=*`;
-  const response = await fetch(url, { headers: { 'user-agent': 'ZhijiReading/1.0' } });
-  if (!response.ok) throw new Error('WIKISOURCE_UNAVAILABLE');
-  const data = await response.json<{ parse?: { wikitext?: string } }>();
-  const raw = data.parse?.wikitext;
-  if (!raw) throw new Error('WIKISOURCE_CHAPTER_NOT_FOUND');
-  const cleaned = raw
-    .replace(/<noinclude>[\s\S]*?<\/noinclude>/gi, ' ')
-    .replace(/<ref[^>]*>[\s\S]*?<\/ref>/gi, ' ')
-    .replace(/\{\{[^{}]*\}\}/g, ' ')
-    .replace(/\[\[(?:[^\]|]*\|)?([^\]]+)\]\]/g, '$1')
-    .replace(/'{2,}/g, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-  if (cleaned.length < 500) throw new Error('WIKISOURCE_TEXT_TOO_SHORT');
-  return { text: cleaned.slice(0, 80_000), url: `https://zh.wikisource.org/wiki/${encodeURIComponent(page)}` };
-}
-
-function looksChinese(value: string) { return /[\u3400-\u9fff]/.test(value); }
-
-async function discoverWikisourceChapter(title: string) {
-  const query = `${title} 第001回`;
-  const url = `https://zh.wikisource.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&srnamespace=0&srlimit=10&format=json&formatversion=2&origin=*`;
-  const response = await fetch(url, { headers: { 'user-agent': 'ZhijiReading/1.0' } });
-  if (!response.ok) return null;
-  const data = await response.json<{ query?: { search?: Array<{ title: string }> } }>();
-  const choices = data.query?.search || [];
-  const normalized = title.replace(/\s+/g, '');
-  const hit = choices.find((item) => item.title.replace(/\s+/g, '').includes(normalized) && /第0*1回|第一回|第0*1章/.test(item.title));
-  if (!hit) return null;
-  try { return await readWikisourceChapter(hit.title); } catch { return null; }
-}
-
-async function discoverGutenbergChapter(title: string) {
-  const response = await fetch(`https://gutendex.com/books?search=${encodeURIComponent(title)}`, { headers: { 'user-agent': 'ZhijiReading/1.0' } });
-  if (!response.ok) return null;
-  const data = await response.json<{ results?: Array<{ id: number; title: string; copyright: boolean | null; formats: Record<string, string> }> }>();
-  const wanted = title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-  const book = (data.results || []).find((item) => item.copyright !== true && item.title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').includes(wanted));
-  if (!book) return null;
-  const textUrl = book.formats['text/plain; charset=utf-8'] || book.formats['text/plain; charset=us-ascii'] || Object.entries(book.formats).find(([type]) => type.startsWith('text/plain'))?.[1];
-  if (!textUrl) return null;
-  const textResponse = await fetch(textUrl, { headers: { 'user-agent': 'ZhijiReading/1.0' } });
-  if (!textResponse.ok) return null;
-  let text = (await textResponse.text()).replace(/\r\n/g, '\n');
-  const startMarker = text.search(/\*\*\* START OF (?:THE|THIS) PROJECT GUTENBERG EBOOK/i);
-  if (startMarker >= 0) text = text.slice(startMarker + 40);
-  const heading = /(?:^|\n)\s*(?:chapter\s+(?:i|1|one)\b[^\n]*|第[一1]章[^\n]*)\s*\n/i;
-  const first = heading.exec(text);
-  if (!first) return null;
-  const chapterStart = first.index + first[0].length;
-  const rest = text.slice(chapterStart);
-  const next = /\n\s*(?:chapter\s+(?:ii|2|two)\b[^\n]*|第[二2]章[^\n]*)\s*\n/i.exec(rest);
-  const chapter = rest.slice(0, next?.index ?? Math.min(rest.length, 80_000)).trim();
-  if (chapter.length < 500) return null;
-  return { text: chapter.slice(0, 80_000), url: `https://www.gutenberg.org/ebooks/${book.id}` };
-}
-
-async function resolvePublicChapter(title: string) {
-  if (WIKISOURCE_CHAPTERS[title]) return readWikisourceChapter(WIKISOURCE_CHAPTERS[title]);
-  if (PUBLIC_TEXTS[title]) return { text: await readBoundedChapter(PUBLIC_TEXTS[title]), url: PUBLIC_TEXTS[title].url };
-  if (looksChinese(title)) {
-    const wikisource = await discoverWikisourceChapter(title);
-    if (wikisource) return wikisource;
-  }
-  return discoverGutenbergChapter(title);
-}
-
 function assertChapterShape(value: unknown) {
   if (!value || typeof value !== 'object') throw new Error('INVALID_CHAPTER_OBJECT');
   const item = value as { chapter?: unknown; quiz?: { options?: unknown; correctIndex?: unknown } };
@@ -160,29 +52,49 @@ export default {
   async fetch(request: Request, env: EditorEnv): Promise<Response> {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { 'access-control-allow-origin': resolveOrigin(request), 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'POST, OPTIONS', 'access-control-max-age': '86400' } });
     if (request.method !== 'POST') return json({ error: 'METHOD_NOT_ALLOWED' }, 405, request);
-    const body = await request.json<{ title?: string; profile?: { goal?: string; level?: string; likes?: string[] }; feedback?: string; wrongAnswerType?: string; sourceText?: string }>();
+    const body = await request.json<{ title?: string; profile?: { goal?: string; level?: string; likes?: string[] }; feedback?: string; wrongAnswerType?: string; sourceText?: string; sourceUrl?: string; action?: string; prompt?: string; apiKey?: string; jobId?: string }>();
     const title = body.title?.trim();
     if (!title) return json({ error: 'TITLE_REQUIRED' }, 400, request);
     const bearer = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') || '';
     if (bearer !== env.EDITOR_SECRET && !(await validSignedToken(bearer, env.EDITOR_SECRET, title))) return json({ error: 'UNAUTHORIZED' }, 401, request);
     try {
+      if (body.action === 'start-job' || body.action === 'job-status') {
+        const claims = bearer === env.EDITOR_SECRET ? { uid: 'admin' } : JSON.parse(new TextDecoder().decode(fromBase64Url(bearer.split('.')[1])));
+        if (!claims.uid) return json({ error: 'UNAUTHORIZED' }, 401, request);
+        const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(claims.uid + ':' + title))), x => x.toString(16).padStart(2, '0')).join('').slice(0, 24);
+        if (!body.jobId || !/^[a-f0-9-]{36}$/.test(body.jobId)) return json({ error: 'INVALID_JOB_ID' }, 400, request);
+        const id = hash + '-' + body.jobId;
+        if (body.action === 'job-status') { const status = await (await env.READING.get(id)).status(); return json({ job: status }, 200, request); }
+        if (!body.sourceText || body.sourceText.length < 150 || body.sourceText.length > 80_000) return json({ error: '需要完整的第一章正文（150–80000字符）' }, 400, request);
+        try { const existing = await (await env.READING.get(id)).status(); return json({ job: existing }, 202, request); } catch { /* Instance has not been created. */ }
+        await env.READING.create({ id, params: { title, sourceText: body.sourceText, sourceUrl: body.sourceUrl || 'user-upload', profile: body.profile || {} } });
+        return json({ job: { status: 'queued' } }, 202, request);
+      }
+      if (body.action === 'image') {
+        if (!body.prompt || body.prompt.length > 2000) return json({ error: 'INVALID_IMAGE_PROMPT' }, 400, request);
+        const result = await env.AI.run('@cf/black-forest-labs/flux-1-schnell', { prompt: body.prompt, steps: 4 });
+        return json({ image: 'data:image/jpeg;base64,' + result.image }, 200, request);
+      }
       const uploadedText = body.sourceText?.trim().slice(0, 80_000);
       const resolved = uploadedText && uploadedText.length >= 500
         ? { text: uploadedText, url: 'user-upload' }
-        : await resolvePublicChapter(title);
+        : await resolveSource(title, body.sourceUrl);
       if (!resolved) return json({ error: 'SOURCE_NOT_FOUND', message: '暂时没有找到可核验的第一章正文。系统会继续扩充来源，不会把查找工作交给读者。' }, 422, request);
+      if (body.action === 'source') return json({ source: resolved }, 200, request);
       const source = resolved.text;
       const result = await env.AI.run('@cf/zai-org/glm-4.7-flash', {
         messages: [
           { role: 'system', content: '你是严谨的中文文学编辑。只依据提供的章节原文工作。交付完整连贯的一章，不是摘要。保留全部事件、说话者、行动主体、因果、场景转换和结尾状态。个性化作用于整章词汇、句长、解释密度和思考空间。语言像人写，少用口号、冒号和破折号。输出前在内部逐项核对人物、动作、顺序、数字与结尾，发现不一致必须修正。输出严格 JSON，不要代码围栏。' },
-          { role: 'user', content: `书名：${title}\n阅读目标：${body.profile?.goal || '读懂故事'}\n阅读基础：${body.profile?.level || '平时会读一些'}\n兴趣：${body.profile?.likes?.join('、') || '尚未确定'}\n上一章反馈：${body.feedback || '无'}\n上次错题类型：${body.wrongAnswerType || '无'}\n\n原文：\n${source}\n\n请返回 {"chapterTitle":"...","chapter":["自然段1","自然段2"],"originalEvidence":[{"adapted":"改写中的关键句","original":"不超过30字或20个英文词的原文证据","note":"比较说明"}],"quiz":{"question":"需要推理的问题","options":["A项","B项","C项","D项"],"correctIndex":0,"rightFeedback":"...","wrongFeedback":["对应A的反馈","对应B的反馈","对应C的反馈","对应D的反馈"]},"imageCue":{"needed":true,"reason":"只有关键剧情才为true并说明原因","prompt":"准确的无文字插图提示"}}。错误选项分别体现范围夸大、因果倒置、无证据补充或只看一面。` },
+          { role: 'user', content: `书名：${title}\n阅读目标：${body.profile?.goal || '读懂故事'}\n阅读基础：${body.profile?.level || '平时会读一些'}\n兴趣：${body.profile?.likes?.join('、') || '尚未确定'}\n上一章反馈：${body.feedback || '无'}\n上次错题类型：${body.wrongAnswerType || '无'}\n\n原文：\n${source}\n\n请返回 {"chapterTitle":"...","chapter":["自然段1","自然段2"],"originalEvidence":[{"adapted":"改写中的关键句","original":"不超过30字或20个英文词的原文证据","note":"比较说明"}],"quiz":{"question":"需要推理的问题","options":["A项","B项","C项","D项"],"correctIndex":0,"rightFeedback":"...","wrongFeedback":["对应A的反馈","对应B的反馈","对应C的反馈","对应D的反馈"]},"imageCue":{"needed":true,"reason":"只有关键剧情才为true并说明原因","prompt":"用英文描述本章一个具体场景、人物外观和动作，绘本插图，无文字，最多150词"}}。错误选项分别体现范围夸大、因果倒置、无证据补充或只看一面。` },
         ],
         response_format: { type: 'json_object' },
         reasoning_effort: 'low',
-        max_completion_tokens: 5000,
+        max_completion_tokens: 16000,
         temperature: 0.55,
       });
-      const content = (result as { choices?: Array<{ message?: { content?: string } }> }).choices?.[0]?.message?.content;
+      const completion = result as { choices?: Array<{ finish_reason?: string; message?: { content?: string } }> };
+      if (completion.choices?.[0]?.finish_reason === 'length') throw new Error('MODEL_OUTPUT_TRUNCATED');
+      const content = completion.choices?.[0]?.message?.content;
       if (!content) throw new Error('EMPTY_MODEL_RESPONSE');
       let parsed: unknown;
       try { parsed = parseModelJson(content); }
@@ -194,7 +106,8 @@ export default {
       return json({ content: parsed, source: resolved.url, model: '@cf/zai-org/glm-4.7-flash', verified: 'model-self-check+structure-check' }, 200, request);
     } catch (error) {
       console.error(JSON.stringify({ event: 'adapt_failed', title, error: error instanceof Error ? error.message : String(error) }));
-      return json({ error: 'GENERATION_FAILED', message: '这一章暂时没有准备好，请稍后再试。' }, 502, request);
+      return json({ error: 'GENERATION_FAILED', message: '改写未完成，请重试。', detail: error instanceof Error ? error.message : 'UNKNOWN' }, 502, request);
     }
   },
 } satisfies ExportedHandler<EditorEnv>;
+

@@ -13,7 +13,7 @@ import { useSearchParams } from 'next/navigation';
 import BrandMark from '../brand-mark';
 
 type Work = {
-  key: string;
+  key: string; sourceUrl: string; provider: string;
   title: string;
   author_name?: string[];
   first_publish_year?: number;
@@ -35,14 +35,14 @@ export default function DiscoverPage() {
     const controller = new AbortController();
     setLoading(true);
     fetch(
-      `https://openlibrary.org/search.json?q=${encodeURIComponent(initial)}&fields=key,title,author_name,first_publish_year,public_scan_b,ebook_access,edition_count&limit=8`,
+      `/api/sources?q=${encodeURIComponent(initial)}`,
       { signal: controller.signal },
     )
       .then((r) => {
         if (!r.ok) throw new Error('search failed');
         return r.json();
       })
-      .then((data) => setWorks(data.docs || []))
+      .then((value) => { const data = value as { results: { title: string; sourceUrl: string; author: string; provider: string }[] }; setWorks(data.results.map(x => ({ ...x, key: x.sourceUrl, author_name: [x.author] }))); })
       .catch((error) => {
         if (error.name !== 'AbortError') setFailed(true);
       })
@@ -180,7 +180,7 @@ export default function DiscoverPage() {
       </section>
       <section className="web-results">
         <div className="results-title">
-          <h2>图书馆结果</h2>
+          <h2>公版原文来源</h2>
           <span>
             {loading
               ? '正在查询'
@@ -202,9 +202,7 @@ export default function DiscoverPage() {
               <div className="book-monogram">{work.title.slice(0, 1)}</div>
               <div>
                 <small>
-                  {work.public_scan_b || work.ebook_access === 'public'
-                    ? '可在线阅读'
-                    : '馆藏目录'}
+                  {work.provider}
                 </small>
                 <h2>{work.title}</h2>
                 <p>
@@ -217,14 +215,14 @@ export default function DiscoverPage() {
               </div>
               <div className="web-book-actions">
                 <a
-                  href={`https://openlibrary.org${work.key}`}
+                  href={work.sourceUrl}
                   target="_blank"
                   rel="noreferrer"
                 >
-                  查看馆藏
+                  查看原文
                 </a>
                 <a
-                  href={`/adapt?title=${encodeURIComponent(work.title)}&source=${encodeURIComponent(`https://openlibrary.org${work.key}`)}`}
+                  href={`/adapt?title=${encodeURIComponent(work.title)}&source=${encodeURIComponent(work.sourceUrl)}`}
                 >
                   生成并阅读第一章
                 </a>
@@ -233,7 +231,7 @@ export default function DiscoverPage() {
           ))}
         {!loading && !failed && !works.length && (
           <div className="no-web-result">
-            <strong>图书馆暂时没有准确结果</strong>
+            <strong>暂时没有找到匹配的公版原文</strong>
             <p>
               可以继续查看上方的维基文库和 Project
               Gutenberg。版权状态不明确的结果只显示馆藏信息，不提供下载。

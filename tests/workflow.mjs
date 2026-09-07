@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import { build } from 'esbuild';
+await build({entryPoints:['./ai-worker/src/reading-workflow.ts'],bundle:true,platform:'node',format:'esm',outfile:'work/workflow-test.mjs',plugins:[{name:'runtime',setup(b){b.onResolve({filter:/^cloudflare:workers$/},()=>({path:'runtime',namespace:'stub'}));b.onLoad({filter:/.*/,namespace:'stub'},()=>({contents:'export class WorkflowEntrypoint { constructor(ctx,env){this.env=env;} }'}));}}]});
+const {ReadingWorkflow}=await import('../work/workflow-test.mjs');
+const source=('甲说：先过桥，再找船。乙留下照顾病人。\n').repeat(180), seen=[], steps=[];
+const AI={run:async(model,body)=>{if(model.includes('flux'))return {image:'dGVzdA=='};assert.equal(model,'@cf/meta/llama-3.1-8b-instruct-fast');const input=JSON.parse(body.messages[1].content);if(input.source){assert(input.source.length<=2200);seen.push(input.source);return {response:JSON.stringify({paragraphs:['甲和乙来到桥边。','两人商量渡河。','甲去找船。','乙照顾病人。'],summary:'二人分工。'})};}return {response:JSON.stringify({chapterTitle:'第一章',quiz:{question:'为何分工？',options:['照顾病人','迷路','争吵','返程'],correctIndex:0,rightFeedback:'符合原文',wrongFeedback:['正确','无证据','无证据','无证据']},imageCue:{prompt:'Two travelers at a bridge, book illustration, no text'}})}}};
+const job=new ReadingWorkflow({}, {EDITOR_SECRET:'test',AI});
+const result=await job.run({payload:{title:'任意未登记书籍',sourceText:source,sourceUrl:'user-upload',profile:{}}},{do:async(name,options,fn)=>{steps.push(name);return fn();}});
+assert.equal(seen.join(''),source.trim());assert.equal(result.parts,seen.length);assert(result.image.startsWith('data:image/jpeg'));assert.equal(steps.at(-1),'illustration');
+console.log('PASS: arbitrary title, complete bounded source, durable assembly, quiz and image fallback.');
