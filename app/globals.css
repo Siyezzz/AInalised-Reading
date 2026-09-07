@@ -2395,6 +2395,8 @@ body {
 .remove-book { display: inline-flex; align-items: center; gap: 5px; padding: 10px 12px; border: 0; background: transparent; color: #78847e; cursor: pointer; white-space: nowrap; }
 .remove-book:hover { color: #9c493e; }
 .remove-book:disabled { opacity: .55; cursor: wait; }
+.view-original { display: inline-flex; align-items: center; gap: 4px; padding: 10px 12px; border: 0; background: transparent; color: #5a7a6e; cursor: pointer; white-space: nowrap; text-decoration: none; font-size: 13px; }
+.view-original:hover { color: #245b4c; }
 .adapt-state { max-width: 760px; margin: 0 auto; padding: 130px 32px; }
 .adapt-state > span { color: #9a6c2e; font-size: 13px; letter-spacing: .08em; }
 .adapt-state h1 { margin: 14px 0 20px; font: 600 clamp(42px, 7vw, 68px)/1.15 var(--display); }

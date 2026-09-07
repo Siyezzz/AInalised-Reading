@@ -94,20 +94,22 @@ export async function POST(request: Request) {
   if (!extension) return Response.json({ error: '支持 PDF、EPUB、MOBI、AZW3 和 TXT' }, { status: 400 });
   if (file.size > 25 * 1024 * 1024)
     return Response.json({ error: '文件不能超过 25MB' }, { status: 400 });
-  if (typeof extractedText !== 'string' || extractedText.trim().length < 500)
-    return Response.json({ error: '没有收到可用于改写的第一章正文' }, { status: 400 });
+  const hasText = typeof extractedText === 'string' && extractedText.trim().length >= 500;
   const id = crypto.randomUUID();
   const safeTitle = file.name.replace(/\.(pdf|epub|mobi|azw3|kf8|txt)$/i, '').trim() || '未命名书籍';
   const key = `${user.userId}/${id}.${extension}`;
-  const textKey = `${key}.chapter.txt`;
   await env.FILES.put(key, file.stream(), {
     httpMetadata: { contentType: file.type || 'application/octet-stream' },
     customMetadata: { owner: user.userId, originalName: file.name },
   });
-  await env.FILES.put(textKey, extractedText.trim().slice(0, 80_000), {
-    httpMetadata: { contentType: 'text/plain; charset=utf-8' },
-    customMetadata: { owner: user.userId, purpose: 'first-chapter-source' },
-  });
+  if (hasText) {
+    const textKey = `${key}.chapter.txt`;
+    await env.FILES.put(textKey, (extractedText as string).trim().slice(0, 80_000), {
+      httpMetadata: { contentType: 'text/plain; charset=utf-8' },
+      customMetadata: { owner: user.userId, purpose: 'first-chapter-source' },
+    });
+  }
+  const status = hasText ? '第一章已准备' : '已导入，待提取正文';
   try {
     await env.DB.prepare(
       'INSERT INTO shelf_books (id,user_id,title,source,source_url,file_key,content_type,size,progress,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
@@ -122,24 +124,24 @@ export async function POST(request: Request) {
         file.type || 'application/octet-stream',
         file.size,
         0,
-        '第一章已准备',
+        status,
         Date.now(),
       )
       .run();
   } catch (error) {
-    await Promise.all([env.FILES.delete(key), env.FILES.delete(textKey)]);
+    await env.FILES.delete(key);
     throw error;
   }
   return Response.json(
     {
-      readUrl: `/adapt?title=${encodeURIComponent(safeTitle)}&source=${encodeURIComponent(`upload:${id}`)}`,
+      readUrl: hasText ? `/adapt?title=${encodeURIComponent(safeTitle)}&source=${encodeURIComponent(`upload:${id}`)}` : `/pdf?id=${encodeURIComponent(id)}&title=${encodeURIComponent(safeTitle)}`,
       book: {
         id,
         title: safeTitle,
         source: `个人 ${extension.toUpperCase()}`,
         size: file.size,
         progress: 0,
-        status: '第一章已准备',
+        status,
         createdAt: Date.now(),
       },
     },

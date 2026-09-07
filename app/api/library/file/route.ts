@@ -14,9 +14,16 @@ export async function GET(request: Request) {
   if (!row) return new Response('没有找到这本书', { status: 404 });
   const object = await env.FILES.get(row.fileKey);
   if (!object) return new Response('文件不存在', { status: 404 });
+  // Infer correct content-type from file extension if stored type is generic
+  let contentType = row.contentType || 'application/octet-stream';
+  if (contentType === 'application/octet-stream' || !contentType.includes('/')) {
+    if (row.fileKey?.endsWith('.pdf')) contentType = 'application/pdf';
+    else if (row.fileKey?.endsWith('.epub')) contentType = 'application/epub+zip';
+    else if (row.fileKey?.endsWith('.txt')) contentType = 'text/plain; charset=utf-8';
+  }
   return new Response(object.body, {
     headers: {
-      'content-type': row.contentType || 'application/octet-stream',
+      'content-type': contentType,
       'content-disposition': 'inline',
       'cache-control': 'private, max-age=300',
     },

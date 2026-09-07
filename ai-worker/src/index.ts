@@ -19,8 +19,17 @@ const WIKISOURCE_CHAPTERS: Record<string, string> = {
   '水滸傳': '水滸傳/第001回',
 };
 
-function json(data: unknown, status = 200) {
-  return Response.json(data, { status, headers: { 'cache-control': 'no-store', 'access-control-allow-origin': 'https://zhiji-reading.li-siye-0123.chatgpt.site', 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'POST, OPTIONS' } });
+const ALLOWED_ORIGINS = new Set([
+  'https://zhiji-reading.li-siye-0123.chatgpt.site',
+  'http://localhost:5173',
+  'http://localhost:4173',
+]);
+function resolveOrigin(request: Request): string {
+  const origin = request.headers.get('origin') || '';
+  return ALLOWED_ORIGINS.has(origin) ? origin : 'https://zhiji-reading.li-siye-0123.chatgpt.site';
+}
+function json(data: unknown, status: number, request: Request) {
+  return Response.json(data, { status, headers: { 'cache-control': 'no-store', 'access-control-allow-origin': resolveOrigin(request), 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'POST, OPTIONS' } });
 }
 
 function fromBase64Url(value: string) { const binary = atob(value.replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(binary, (c) => c.charCodeAt(0)); }
@@ -149,19 +158,19 @@ function assertChapterShape(value: unknown) {
 
 export default {
   async fetch(request: Request, env: EditorEnv): Promise<Response> {
-    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { 'access-control-allow-origin': 'https://zhiji-reading.li-siye-0123.chatgpt.site', 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'POST, OPTIONS', 'access-control-max-age': '86400' } });
-    if (request.method !== 'POST') return json({ error: 'METHOD_NOT_ALLOWED' }, 405);
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { 'access-control-allow-origin': resolveOrigin(request), 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'POST, OPTIONS', 'access-control-max-age': '86400' } });
+    if (request.method !== 'POST') return json({ error: 'METHOD_NOT_ALLOWED' }, 405, request);
     const body = await request.json<{ title?: string; profile?: { goal?: string; level?: string; likes?: string[] }; feedback?: string; wrongAnswerType?: string; sourceText?: string }>();
     const title = body.title?.trim();
-    if (!title) return json({ error: 'TITLE_REQUIRED' }, 400);
+    if (!title) return json({ error: 'TITLE_REQUIRED' }, 400, request);
     const bearer = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') || '';
-    if (bearer !== env.EDITOR_SECRET && !(await validSignedToken(bearer, env.EDITOR_SECRET, title))) return json({ error: 'UNAUTHORIZED' }, 401);
+    if (bearer !== env.EDITOR_SECRET && !(await validSignedToken(bearer, env.EDITOR_SECRET, title))) return json({ error: 'UNAUTHORIZED' }, 401, request);
     try {
       const uploadedText = body.sourceText?.trim().slice(0, 80_000);
       const resolved = uploadedText && uploadedText.length >= 500
         ? { text: uploadedText, url: 'user-upload' }
         : await resolvePublicChapter(title);
-      if (!resolved) return json({ error: 'SOURCE_NOT_FOUND', message: '暂时没有找到可核验的第一章正文。系统会继续扩充来源，不会把查找工作交给读者。' }, 422);
+      if (!resolved) return json({ error: 'SOURCE_NOT_FOUND', message: '暂时没有找到可核验的第一章正文。系统会继续扩充来源，不会把查找工作交给读者。' }, 422, request);
       const source = resolved.text;
       const result = await env.AI.run('@cf/zai-org/glm-4.7-flash', {
         messages: [
@@ -182,10 +191,10 @@ export default {
         throw parseError;
       }
       assertChapterShape(parsed);
-      return json({ content: parsed, source: resolved.url, model: '@cf/zai-org/glm-4.7-flash', verified: 'model-self-check+structure-check' });
+      return json({ content: parsed, source: resolved.url, model: '@cf/zai-org/glm-4.7-flash', verified: 'model-self-check+structure-check' }, 200, request);
     } catch (error) {
       console.error(JSON.stringify({ event: 'adapt_failed', title, error: error instanceof Error ? error.message : String(error) }));
-      return json({ error: 'GENERATION_FAILED', message: '这一章暂时没有准备好，请稍后再试。' }, 502);
+      return json({ error: 'GENERATION_FAILED', message: '这一章暂时没有准备好，请稍后再试。' }, 502, request);
     }
   },
 } satisfies ExportedHandler<EditorEnv>;

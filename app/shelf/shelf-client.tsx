@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   BookOpen,
   Check,
+  Eye,
   FileText,
   LogOut,
   Search,
@@ -55,12 +56,19 @@ export default function ShelfClient({
     setUploadProgress(4);
     setMessage('正在读取文件');
     const form = new FormData();
+    let extractionFailed = false;
     try {
-      const extractedText = await extractFirstChapter(file, (value, label) => { setUploadProgress(value); setMessage(label); });
+      let extractedText = '';
+      try {
+        extractedText = await extractFirstChapter(file, (value, label) => { setUploadProgress(value); setMessage(label); });
+      } catch (extractError) {
+        extractionFailed = true;
+        setMessage('文字提取失败，正在保存原始文件');
+      }
       setUploadProgress(64);
-      setMessage('正在保存正文来源');
+      setMessage('正在保存文件');
       form.append('file', file);
-      form.append('extractedText', extractedText);
+      if (extractedText) form.append('extractedText', extractedText);
       const response = await fetch('/api/library', {
         method: 'POST',
         body: form,
@@ -69,6 +77,12 @@ export default function ShelfClient({
       if (!response.ok) throw new Error(data.error || '上传失败');
       setBooks((current) => [data.book, ...current]);
       setUploadProgress(100);
+      if (extractionFailed) {
+        setMessage('PDF 已保存。文字识别暂不可用，你可以先查看原文。');
+        setBusy(false);
+        if (input.current) input.current.value = '';
+        return;
+      }
       setMessage('第一章已经提取，正在进入 AI 改写');
       window.setTimeout(() => { window.location.href = data.readUrl; }, 500);
     } catch (error) {
@@ -184,6 +198,7 @@ export default function ShelfClient({
             </div>
             <div className="shelf-book-actions">
               <a className="continue-reading" href={book.title === '爱丽丝漫游奇境' ? '/chapter/alice' : `/adapt?title=${encodeURIComponent(book.title)}&source=${encodeURIComponent(book.sourceUrl || `upload:${book.id}`)}`}>继续阅读</a>
+              {!book.sourceUrl && <a className="view-original" href={`/pdf?id=${encodeURIComponent(book.id)}&title=${encodeURIComponent(book.title)}`}><Eye size={14} />查看原文</a>}
               <button className="remove-book" onClick={() => removeBook(book)} disabled={removing === book.id} aria-label={`把《${book.title}》移出书架`}><Trash2 size={16} />{removing === book.id ? '正在移除' : '移出'}</button>
             </div>
           </article>

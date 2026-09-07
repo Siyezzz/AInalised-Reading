@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     const uploaded = await env.DB.prepare('SELECT file_key AS fileKey FROM shelf_books WHERE id = ? AND user_id = ? AND file_key IS NOT NULL LIMIT 1').bind(uploadId, user.userId).first<{ fileKey: string }>();
     if (!uploaded) return Response.json({ error: '没有找到这份导入文件' }, { status: 404 });
     const object = await env.FILES.get(`${uploaded.fileKey}.chapter.txt`);
-    if (!object) return Response.json({ error: '这份文件还没有提取出第一章，请重新导入' }, { status: 422 });
+    if (!object) return Response.json({ error: '这份文件的文字尚未提取，无法进行 AI 改写。请先在书架上查看原文，或重新导入。', needExtraction: true }, { status: 422 });
     sourceText = (await object.text()).slice(0, 80_000);
   }
   const payload = bytesToBase64Url(new TextEncoder().encode(JSON.stringify({ title, uid: user.userId, exp: Date.now() + 10 * 60_000 })));
