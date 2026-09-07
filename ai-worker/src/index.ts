@@ -8,8 +8,27 @@ const PUBLIC_TEXTS: Record<string, { url: string; start: string; end: string }> 
   },
 };
 
+const WIKISOURCE_CHAPTERS: Record<string, string> = {
+  '红楼梦': '紅樓夢/第001回',
+  '紅樓夢': '紅樓夢/第001回',
+  '西游记': '西遊記/第001回',
+  '西遊記': '西遊記/第001回',
+  '三国演义': '三國演義/第001回',
+  '三國演義': '三國演義/第001回',
+  '水浒传': '水滸傳/第001回',
+  '水滸傳': '水滸傳/第001回',
+};
+
 function json(data: unknown, status = 200) {
-  return Response.json(data, { status, headers: { 'cache-control': 'no-store' } });
+  return Response.json(data, { status, headers: { 'cache-control': 'no-store', 'access-control-allow-origin': 'https://zhiji-reading.li-siye-0123.chatgpt.site', 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'POST, OPTIONS' } });
+}
+
+function fromBase64Url(value: string) { const binary = atob(value.replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(binary, (c) => c.charCodeAt(0)); }
+async function validSignedToken(token: string, secret: string, title: string) {
+  const [version, payload, signature] = token.split('.'); if (version !== 'v1' || !payload || !signature) return false;
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
+  const valid = await crypto.subtle.verify('HMAC', key, fromBase64Url(signature), new TextEncoder().encode(payload)); if (!valid) return false;
+  try { const data = JSON.parse(new TextDecoder().decode(fromBase64Url(payload))) as { title?: string; exp?: number }; return data.title === title && Number(data.exp) > Date.now(); } catch { return false; }
 }
 
 function parseModelJson(value: string): unknown {
@@ -51,20 +70,54 @@ async function readBoundedChapter(config: { url: string; start: string; end: str
   return text.slice(start, end).trim().slice(0, 80_000);
 }
 
+async function readWikisourceChapter(page: string) {
+  const url = `https://zh.wikisource.org/w/api.php?action=parse&page=${encodeURIComponent(page)}&prop=wikitext&format=json&formatversion=2&origin=*`;
+  const response = await fetch(url, { headers: { 'user-agent': 'ZhijiReading/1.0' } });
+  if (!response.ok) throw new Error('WIKISOURCE_UNAVAILABLE');
+  const data = await response.json<{ parse?: { wikitext?: string } }>();
+  const raw = data.parse?.wikitext;
+  if (!raw) throw new Error('WIKISOURCE_CHAPTER_NOT_FOUND');
+  const cleaned = raw
+    .replace(/<noinclude>[\s\S]*?<\/noinclude>/gi, ' ')
+    .replace(/<ref[^>]*>[\s\S]*?<\/ref>/gi, ' ')
+    .replace(/\{\{[^{}]*\}\}/g, ' ')
+    .replace(/\[\[(?:[^\]|]*\|)?([^\]]+)\]\]/g, '$1')
+    .replace(/'{2,}/g, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  if (cleaned.length < 500) throw new Error('WIKISOURCE_TEXT_TOO_SHORT');
+  return { text: cleaned.slice(0, 80_000), url: `https://zh.wikisource.org/wiki/${encodeURIComponent(page)}` };
+}
+
+function assertChapterShape(value: unknown) {
+  if (!value || typeof value !== 'object') throw new Error('INVALID_CHAPTER_OBJECT');
+  const item = value as { chapter?: unknown; quiz?: { options?: unknown; correctIndex?: unknown } };
+  if (!Array.isArray(item.chapter) || item.chapter.length < 4 || !item.chapter.every((p) => typeof p === 'string' && p.trim().length > 0)) throw new Error('INCOMPLETE_CHAPTER');
+  if (!item.quiz || !Array.isArray(item.quiz.options) || item.quiz.options.length !== 4 || typeof item.quiz.correctIndex !== 'number' || item.quiz.correctIndex < 0 || item.quiz.correctIndex > 3) throw new Error('INVALID_QUIZ');
+}
+
 export default {
   async fetch(request: Request, env: EditorEnv): Promise<Response> {
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { 'access-control-allow-origin': 'https://zhiji-reading.li-siye-0123.chatgpt.site', 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'POST, OPTIONS', 'access-control-max-age': '86400' } });
     if (request.method !== 'POST') return json({ error: 'METHOD_NOT_ALLOWED' }, 405);
-    if (request.headers.get('authorization') !== `Bearer ${env.EDITOR_SECRET}`)
-      return json({ error: 'UNAUTHORIZED' }, 401);
     const body = await request.json<{ title?: string; profile?: { goal?: string; level?: string; likes?: string[] }; feedback?: string; wrongAnswerType?: string }>();
     const title = body.title?.trim();
-    if (!title || !PUBLIC_TEXTS[title]) return json({ error: 'SOURCE_REQUIRED', message: '这本书暂时没有可核验的公版正文，请上传你有权阅读的 PDF。' }, 422);
+    if (!title) return json({ error: 'TITLE_REQUIRED' }, 400);
+    const bearer = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') || '';
+    if (bearer !== env.EDITOR_SECRET && !(await validSignedToken(bearer, env.EDITOR_SECRET, title))) return json({ error: 'UNAUTHORIZED' }, 401);
     try {
-      const source = await readBoundedChapter(PUBLIC_TEXTS[title]);
+      const resolved = WIKISOURCE_CHAPTERS[title]
+        ? await readWikisourceChapter(WIKISOURCE_CHAPTERS[title])
+        : PUBLIC_TEXTS[title]
+          ? { text: await readBoundedChapter(PUBLIC_TEXTS[title]), url: PUBLIC_TEXTS[title].url }
+          : null;
+      if (!resolved) return json({ error: 'SOURCE_NOT_FOUND', message: '暂时没有找到可核验的第一章正文。系统会继续扩充来源，不会把查找工作交给读者。' }, 422);
+      const source = resolved.text;
       const result = await env.AI.run('@cf/zai-org/glm-4.7-flash', {
         messages: [
-          { role: 'system', content: '你是严谨的中文文学编辑。只依据提供的章节原文工作。交付完整连贯的一章，不是摘要。保留全部事件、行动主体、因果、场景转换和结尾状态。个性化作用于整章词汇、句长、解释密度和思考空间。语言像人写，少用口号、冒号和破折号。输出严格 JSON，不要代码围栏。' },
-          { role: 'user', content: `书名：${title}\n阅读目标：${body.profile?.goal || '读懂故事'}\n阅读基础：${body.profile?.level || '平时会读一些'}\n兴趣：${body.profile?.likes?.join('、') || '尚未确定'}\n上一章反馈：${body.feedback || '无'}\n上次错题类型：${body.wrongAnswerType || '无'}\n\n原文：\n${source}\n\n请返回 {"chapterTitle":"...","chapter":["自然段1","自然段2"],"originalEvidence":[{"adapted":"改写中的关键句","original":"不超过20个英文词的原文证据","note":"比较说明"}],"quiz":{"question":"需要推理的问题","options":["A项","B项","C项","D项"],"correctIndex":0,"rightFeedback":"...","wrongFeedback":["...","...","...","..."]},"imageCue":{"needed":true,"reason":"为什么这是关键剧情点","prompt":"准确的无文字插图提示"}}。错误选项分别体现范围夸大、因果倒置、无证据补充或只看一面。` },
+          { role: 'system', content: '你是严谨的中文文学编辑。只依据提供的章节原文工作。交付完整连贯的一章，不是摘要。保留全部事件、说话者、行动主体、因果、场景转换和结尾状态。个性化作用于整章词汇、句长、解释密度和思考空间。语言像人写，少用口号、冒号和破折号。输出前在内部逐项核对人物、动作、顺序、数字与结尾，发现不一致必须修正。输出严格 JSON，不要代码围栏。' },
+          { role: 'user', content: `书名：${title}\n阅读目标：${body.profile?.goal || '读懂故事'}\n阅读基础：${body.profile?.level || '平时会读一些'}\n兴趣：${body.profile?.likes?.join('、') || '尚未确定'}\n上一章反馈：${body.feedback || '无'}\n上次错题类型：${body.wrongAnswerType || '无'}\n\n原文：\n${source}\n\n请返回 {"chapterTitle":"...","chapter":["自然段1","自然段2"],"originalEvidence":[{"adapted":"改写中的关键句","original":"不超过30字或20个英文词的原文证据","note":"比较说明"}],"quiz":{"question":"需要推理的问题","options":["A项","B项","C项","D项"],"correctIndex":0,"rightFeedback":"...","wrongFeedback":["对应A的反馈","对应B的反馈","对应C的反馈","对应D的反馈"]},"imageCue":{"needed":true,"reason":"只有关键剧情才为true并说明原因","prompt":"准确的无文字插图提示"}}。错误选项分别体现范围夸大、因果倒置、无证据补充或只看一面。` },
         ],
         response_format: { type: 'json_object' },
         reasoning_effort: 'low',
@@ -79,20 +132,8 @@ export default {
         console.error(JSON.stringify({ event: 'model_json_invalid', length: content.length, tail: content.slice(-160), parseError: parseError instanceof Error ? parseError.message : String(parseError) }));
         throw parseError;
       }
-      const verified = await env.AI.run('@cf/zai-org/glm-4.7-flash', {
-        messages: [
-          { role: 'system', content: '你是文学事实核对编辑。逐项对照原文，修正草稿中的人物关系、说话者、行动主体、先后顺序、因果、数字和结尾状态。保持完整章节和原 JSON 结构。不要增加原文没有的事实。语言自然。只输出严格 JSON。' },
-          { role: 'user', content: `原文：\n${source}\n\n待核对草稿：\n${JSON.stringify(parsed)}` },
-        ],
-        response_format: { type: 'json_object' },
-        reasoning_effort: 'low',
-        max_completion_tokens: 5000,
-        temperature: 0.15,
-      });
-      const verifiedContent = (verified as { choices?: Array<{ message?: { content?: string } }> }).choices?.[0]?.message?.content;
-      if (!verifiedContent) throw new Error('EMPTY_VERIFIER_RESPONSE');
-      const verifiedParsed = parseModelJson(verifiedContent);
-      return json({ content: verifiedParsed, source: PUBLIC_TEXTS[title].url, model: '@cf/zai-org/glm-4.7-flash', verified: true });
+      assertChapterShape(parsed);
+      return json({ content: parsed, source: resolved.url, model: '@cf/zai-org/glm-4.7-flash', verified: 'model-self-check+structure-check' });
     } catch (error) {
       console.error(JSON.stringify({ event: 'adapt_failed', title, error: error instanceof Error ? error.message : String(error) }));
       return json({ error: 'GENERATION_FAILED', message: '这一章暂时没有准备好，请稍后再试。' }, 502);
