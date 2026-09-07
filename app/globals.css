@@ -1107,6 +1107,9 @@ footer p {
 .chapter-body { margin-top: 68px; }
 .chapter-body p { margin: 0 0 1.55em; color: #263b34; font: 400 19px/2 var(--display); letter-spacing: .01em; }
 .chapter-body p:first-child::first-letter { float: left; margin: 8px 9px 0 0; color: #9a6c2e; font-size: 66px; line-height: .72; }
+.story-figure { margin: 42px -80px 48px; }
+.story-figure img { display: block; width: 100%; border-radius: 20px; box-shadow: 0 24px 65px rgba(18, 61, 52, .16); }
+.story-figure figcaption { margin-top: 12px; color: #75817b; font-size: 13px; text-align: center; }
 .original-source { margin: 65px 0; padding: 23px 25px; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
 .original-source summary { display: flex; align-items: center; gap: 9px; color: #245b4c; font-weight: 600; cursor: pointer; }
 .original-source p { color: #66756e; line-height: 1.75; }
@@ -1124,7 +1127,7 @@ footer p {
 .chapter-quiz aside { margin-top: 17px; padding: 16px; border-radius: 10px; line-height: 1.7; font-size: 14px; }
 .quiz-right { background: rgba(89,169,130,.2); }
 .quiz-wrong { background: rgba(183,91,66,.18); }
-@media (max-width: 700px) { .chapter-shell { padding: 55px 20px 80px; } .chapter-intro > span { margin-top: 38px; } .chapter-body p { font-size: 18px; line-height: 1.9; } .chapter-quiz { padding: 25px 20px; } }
+@media (max-width: 700px) { .chapter-shell { padding: 55px 20px 80px; } .chapter-intro > span { margin-top: 38px; } .chapter-body p { font-size: 18px; line-height: 1.9; } .chapter-quiz { padding: 25px 20px; } .story-figure { margin: 34px -8px 40px; } }
 .profile-insight > span {
   color: #9b6b2e;
   font-size: 13px;
@@ -2388,6 +2391,18 @@ body {
   font-size: 13px;
   white-space: nowrap;
 }
+.shelf-book-actions { display: flex; align-items: center; gap: 8px; }
+.remove-book { display: inline-flex; align-items: center; gap: 5px; padding: 10px 12px; border: 0; background: transparent; color: #78847e; cursor: pointer; white-space: nowrap; }
+.remove-book:hover { color: #9c493e; }
+.remove-book:disabled { opacity: .55; cursor: wait; }
+.adapt-state { max-width: 760px; margin: 0 auto; padding: 130px 32px; }
+.adapt-state > span { color: #9a6c2e; font-size: 13px; letter-spacing: .08em; }
+.adapt-state h1 { margin: 14px 0 20px; font: 600 clamp(42px, 7vw, 68px)/1.15 var(--display); }
+.adapt-state p { color: #66756e; font-size: 17px; line-height: 1.8; }
+.adapt-state div { display: flex; gap: 12px; margin-top: 28px; }
+.adapt-state a { display: inline-flex; align-items: center; gap: 5px; padding: 11px 16px; border-radius: 999px; background: #153f35; color: white; text-decoration: none; }
+.adapt-state a.secondary { background: transparent; border: 1px solid var(--hairline); color: #285f50; }
+.chapter-original-link { display: inline-flex; align-items: center; gap: 5px; margin-top: 24px; color: #6e7c75; font-size: 13px; }
 .reader-search {
   display: flex;
   align-items: center;

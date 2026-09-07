@@ -54,7 +54,7 @@ export default function ProfileClient({ email }: { email: string }) {
       window.location.href =
         book === '爱丽丝漫游奇境'
           ? '/chapter/alice'
-          : `/read?title=${encodeURIComponent(book)}&source=${encodeURIComponent(sourceUrl)}&available=1`;
+          : `/adapt?title=${encodeURIComponent(book)}&source=${encodeURIComponent(sourceUrl)}`;
     } catch (error) {
       setBookStatus('error');
       setBookError(error instanceof Error ? error.message : '暂时无法开始阅读');

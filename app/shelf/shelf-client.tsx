@@ -7,6 +7,7 @@ import {
   LogOut,
   Search,
   Download,
+  Trash2,
 } from 'lucide-react';
 import BrandMark from '../brand-mark';
 
@@ -32,6 +33,7 @@ export default function ShelfClient({
     [message, setMessage] = useState(''),
     [loading, setLoading] = useState(true),
     [loadError, setLoadError] = useState('');
+  const [removing, setRemoving] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
     fetch('/api/library', { cache: 'no-store', credentials: 'include' })
@@ -66,6 +68,20 @@ export default function ShelfClient({
       setBusy(false);
       if (input.current) input.current.value = '';
     }
+  }
+  async function removeBook(book: ShelfBook) {
+    if (!window.confirm(`确定把《${book.title}》移出书架吗？${book.sourceUrl ? '' : ' 上传的 PDF 文件也会一并删除。'}`)) return;
+    setRemoving(book.id);
+    setMessage('');
+    try {
+      const response = await fetch(`/api/library?id=${encodeURIComponent(book.id)}`, { method: 'DELETE', credentials: 'include' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || '移除失败');
+      setBooks((current) => current.filter((item) => item.id !== book.id));
+      setMessage(`《${book.title}》已移出书架`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '移除失败');
+    } finally { setRemoving(null); }
   }
   return (
     <main className="product-shell">
@@ -157,18 +173,10 @@ export default function ShelfClient({
               </i>
               <small>阅读进度 {book.progress}%</small>
             </div>
-            <a
-              className="continue-reading"
-              href={
-                book.title === '爱丽丝漫游奇境'
-                  ? '/chapter/alice'
-                  : book.sourceUrl
-                  ? `/read?title=${encodeURIComponent(book.title)}&source=${encodeURIComponent(book.sourceUrl)}&available=1`
-                  : `/pdf?id=${encodeURIComponent(book.id)}&title=${encodeURIComponent(book.title)}`
-              }
-            >
-              继续阅读
-            </a>
+            <div className="shelf-book-actions">
+              <a className="continue-reading" href={book.title === '爱丽丝漫游奇境' ? '/chapter/alice' : book.sourceUrl ? `/adapt?title=${encodeURIComponent(book.title)}&source=${encodeURIComponent(book.sourceUrl)}` : `/pdf?id=${encodeURIComponent(book.id)}&title=${encodeURIComponent(book.title)}`}>继续阅读</a>
+              <button className="remove-book" onClick={() => removeBook(book)} disabled={removing === book.id} aria-label={`把《${book.title}》移出书架`}><Trash2 size={16} />{removing === book.id ? '正在移除' : '移出'}</button>
+            </div>
           </article>
         ))}
         {!loading && !loadError && !books.length && !busy && (

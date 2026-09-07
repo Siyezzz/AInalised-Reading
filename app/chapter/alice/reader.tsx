@@ -52,7 +52,11 @@ export default function AliceChapter() {
         {saveStatus === 'login' && <p className="chapter-save-message">登录后才能收藏。<a href="/signin-with-chatgpt?return_to=/chapter/alice" target="_top">现在登录</a></p>}
         {saveStatus === 'error' && <p className="chapter-save-message">没有收藏成功，请再试一次。</p>}
       </header>
-      <section className="chapter-body">{paragraphs.map((p, i) => <p key={i}>{p}</p>)}</section>
+      <section className="chapter-body">
+        {paragraphs.slice(0, 3).map((p, i) => <p key={i}>{p}</p>)}
+        <figure className="story-figure"><img src="/images/alice-rabbit-hole-v1.png" alt="爱丽丝缓缓掉进兔子洞，手里拿着空果酱罐，四周是书架、地图和橱柜" /><figcaption>她落得很慢，慢到足够看清井壁上的书架、地图和那只空果酱罐。</figcaption></figure>
+        {paragraphs.slice(3).map((p, i) => <p key={i + 3}>{p}</p>)}
+      </section>
       <details className="original-source"><summary><BookOpen size={18} />查看原文与核对来源</summary><p>原作第一章标题为 “Down the Rabbit-Hole”。你可以对照完整公版英文文本，检查人物、事件顺序和细节是否准确。</p><div><a href="https://www.gutenberg.org/cache/epub/928/pg928-images.html" target="_blank" rel="noreferrer">Project Gutenberg 原文 <ExternalLink size={14} /></a><a href="https://www.britishlibrary.cn/en/works/alice-in-wonderland/" target="_blank" rel="noreferrer">英国图书馆作品页 <ExternalLink size={14} /></a></div></details>
       <section className="chapter-quiz"><span>读完想一想</span><h2>下面哪一项最准确地概括了本章中的爱丽丝？</h2><p>不只找“发生了什么”，还要判断几个细节共同表现了怎样的人物。</p><div>{options.map((option, i) => <button className={answer === i ? (i === 1 ? 'correct' : 'wrong') : ''} onClick={() => setAnswer(i)} key={option}><b>{String.fromCharCode(65 + i)}</b>{option}</button>)}</div>{answer !== null && <aside className={answer === 1 ? 'quiz-right' : 'quiz-wrong'}>{answer === 1 ? '答对了。她先观察怀表、检查“有毒”标签，也试着使用纬度和经度，这说明她愿意推理；但她没想回程就跳进洞、知识又常常用不准，仍然保留孩子式的冲动。' : '这个选项只抓住了一个表面。再看她检查标签、猜测地理、追兔子和忘记钥匙这些互相矛盾的细节：作者把好奇、推理和不成熟同时放在她身上。'}</aside>}</section>
     </article>

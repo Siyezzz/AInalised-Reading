@@ -140,3 +140,18 @@ export async function POST(request: Request) {
     { status: 201 },
   );
 }
+
+export async function DELETE(request: Request) {
+  const user = await getChatGPTUser();
+  if (!user) return Response.json({ error: '请先登录' }, { status: 401 });
+  const id = new URL(request.url).searchParams.get('id');
+  if (!id) return Response.json({ error: '缺少书籍编号' }, { status: 400 });
+  const book = await env.DB.prepare(
+    'SELECT file_key AS fileKey FROM shelf_books WHERE id = ? AND user_id = ? LIMIT 1',
+  ).bind(id, user.userId).first<{ fileKey?: string | null }>();
+  if (!book) return Response.json({ error: '没有找到这本书' }, { status: 404 });
+  await env.DB.prepare('DELETE FROM shelf_books WHERE id = ? AND user_id = ?')
+    .bind(id, user.userId).run();
+  if (book.fileKey) await env.FILES.delete(book.fileKey);
+  return Response.json({ removed: true });
+}

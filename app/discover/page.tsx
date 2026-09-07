@@ -224,9 +224,9 @@ export default function DiscoverPage() {
                   查看馆藏
                 </a>
                 <a
-                  href={`/read?title=${encodeURIComponent(work.title)}&source=${encodeURIComponent(`https://openlibrary.org${work.key}`)}&available=${work.public_scan_b || work.ebook_access === 'public' ? '1' : '0'}`}
+                  href={`/adapt?title=${encodeURIComponent(work.title)}&source=${encodeURIComponent(`https://openlibrary.org${work.key}`)}`}
                 >
-                  开始阅读
+                  生成并阅读第一章
                 </a>
               </div>
             </article>
