@@ -90,6 +90,56 @@ async function readWikisourceChapter(page: string) {
   return { text: cleaned.slice(0, 80_000), url: `https://zh.wikisource.org/wiki/${encodeURIComponent(page)}` };
 }
 
+function looksChinese(value: string) { return /[\u3400-\u9fff]/.test(value); }
+
+async function discoverWikisourceChapter(title: string) {
+  const query = `${title} 第001回`;
+  const url = `https://zh.wikisource.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&srnamespace=0&srlimit=10&format=json&formatversion=2&origin=*`;
+  const response = await fetch(url, { headers: { 'user-agent': 'ZhijiReading/1.0' } });
+  if (!response.ok) return null;
+  const data = await response.json<{ query?: { search?: Array<{ title: string }> } }>();
+  const choices = data.query?.search || [];
+  const normalized = title.replace(/\s+/g, '');
+  const hit = choices.find((item) => item.title.replace(/\s+/g, '').includes(normalized) && /第0*1回|第一回|第0*1章/.test(item.title));
+  if (!hit) return null;
+  try { return await readWikisourceChapter(hit.title); } catch { return null; }
+}
+
+async function discoverGutenbergChapter(title: string) {
+  const response = await fetch(`https://gutendex.com/books?search=${encodeURIComponent(title)}`, { headers: { 'user-agent': 'ZhijiReading/1.0' } });
+  if (!response.ok) return null;
+  const data = await response.json<{ results?: Array<{ id: number; title: string; copyright: boolean | null; formats: Record<string, string> }> }>();
+  const wanted = title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  const book = (data.results || []).find((item) => item.copyright !== true && item.title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').includes(wanted));
+  if (!book) return null;
+  const textUrl = book.formats['text/plain; charset=utf-8'] || book.formats['text/plain; charset=us-ascii'] || Object.entries(book.formats).find(([type]) => type.startsWith('text/plain'))?.[1];
+  if (!textUrl) return null;
+  const textResponse = await fetch(textUrl, { headers: { 'user-agent': 'ZhijiReading/1.0' } });
+  if (!textResponse.ok) return null;
+  let text = (await textResponse.text()).replace(/\r\n/g, '\n');
+  const startMarker = text.search(/\*\*\* START OF (?:THE|THIS) PROJECT GUTENBERG EBOOK/i);
+  if (startMarker >= 0) text = text.slice(startMarker + 40);
+  const heading = /(?:^|\n)\s*(?:chapter\s+(?:i|1|one)\b[^\n]*|第[一1]章[^\n]*)\s*\n/i;
+  const first = heading.exec(text);
+  if (!first) return null;
+  const chapterStart = first.index + first[0].length;
+  const rest = text.slice(chapterStart);
+  const next = /\n\s*(?:chapter\s+(?:ii|2|two)\b[^\n]*|第[二2]章[^\n]*)\s*\n/i.exec(rest);
+  const chapter = rest.slice(0, next?.index ?? Math.min(rest.length, 80_000)).trim();
+  if (chapter.length < 500) return null;
+  return { text: chapter.slice(0, 80_000), url: `https://www.gutenberg.org/ebooks/${book.id}` };
+}
+
+async function resolvePublicChapter(title: string) {
+  if (WIKISOURCE_CHAPTERS[title]) return readWikisourceChapter(WIKISOURCE_CHAPTERS[title]);
+  if (PUBLIC_TEXTS[title]) return { text: await readBoundedChapter(PUBLIC_TEXTS[title]), url: PUBLIC_TEXTS[title].url };
+  if (looksChinese(title)) {
+    const wikisource = await discoverWikisourceChapter(title);
+    if (wikisource) return wikisource;
+  }
+  return discoverGutenbergChapter(title);
+}
+
 function assertChapterShape(value: unknown) {
   if (!value || typeof value !== 'object') throw new Error('INVALID_CHAPTER_OBJECT');
   const item = value as { chapter?: unknown; quiz?: { options?: unknown; correctIndex?: unknown } };
@@ -107,11 +157,7 @@ export default {
     const bearer = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') || '';
     if (bearer !== env.EDITOR_SECRET && !(await validSignedToken(bearer, env.EDITOR_SECRET, title))) return json({ error: 'UNAUTHORIZED' }, 401);
     try {
-      const resolved = WIKISOURCE_CHAPTERS[title]
-        ? await readWikisourceChapter(WIKISOURCE_CHAPTERS[title])
-        : PUBLIC_TEXTS[title]
-          ? { text: await readBoundedChapter(PUBLIC_TEXTS[title]), url: PUBLIC_TEXTS[title].url }
-          : null;
+      const resolved = await resolvePublicChapter(title);
       if (!resolved) return json({ error: 'SOURCE_NOT_FOUND', message: '暂时没有找到可核验的第一章正文。系统会继续扩充来源，不会把查找工作交给读者。' }, 422);
       const source = resolved.text;
       const result = await env.AI.run('@cf/zai-org/glm-4.7-flash', {
