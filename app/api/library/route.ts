@@ -87,21 +87,26 @@ export async function POST(request: Request) {
   }
   const form = await request.formData();
   const file = form.get('file');
+  const extractedText = form.get('extractedText');
   if (!(file instanceof File))
-    return Response.json({ error: '请选择 PDF 文件' }, { status: 400 });
-  if (
-    file.type !== 'application/pdf' &&
-    !file.name.toLowerCase().endsWith('.pdf')
-  )
-    return Response.json({ error: '目前只支持 PDF' }, { status: 400 });
+    return Response.json({ error: '请选择电子书文件' }, { status: 400 });
+  const extension = file.name.toLowerCase().match(/\.(pdf|epub|mobi|azw3|kf8|txt)$/)?.[1];
+  if (!extension) return Response.json({ error: '支持 PDF、EPUB、MOBI、AZW3 和 TXT' }, { status: 400 });
   if (file.size > 25 * 1024 * 1024)
-    return Response.json({ error: 'PDF 不能超过 25MB' }, { status: 400 });
+    return Response.json({ error: '文件不能超过 25MB' }, { status: 400 });
+  if (typeof extractedText !== 'string' || extractedText.trim().length < 500)
+    return Response.json({ error: '没有收到可用于改写的第一章正文' }, { status: 400 });
   const id = crypto.randomUUID();
-  const safeTitle = file.name.replace(/\.pdf$/i, '').trim() || '未命名书籍';
-  const key = `${user.userId}/${id}.pdf`;
+  const safeTitle = file.name.replace(/\.(pdf|epub|mobi|azw3|kf8|txt)$/i, '').trim() || '未命名书籍';
+  const key = `${user.userId}/${id}.${extension}`;
+  const textKey = `${key}.chapter.txt`;
   await env.FILES.put(key, file.stream(), {
-    httpMetadata: { contentType: 'application/pdf' },
+    httpMetadata: { contentType: file.type || 'application/octet-stream' },
     customMetadata: { owner: user.userId, originalName: file.name },
+  });
+  await env.FILES.put(textKey, extractedText.trim().slice(0, 80_000), {
+    httpMetadata: { contentType: 'text/plain; charset=utf-8' },
+    customMetadata: { owner: user.userId, purpose: 'first-chapter-source' },
   });
   try {
     await env.DB.prepare(
@@ -111,33 +116,34 @@ export async function POST(request: Request) {
         id,
         user.userId,
         safeTitle,
-        '个人 PDF',
+        `个人 ${extension.toUpperCase()}`,
         null,
         key,
-        'application/pdf',
+        file.type || 'application/octet-stream',
         file.size,
         0,
-        '等待准备',
+        '第一章已准备',
         Date.now(),
       )
       .run();
   } catch (error) {
-    await env.FILES.delete(key);
+    await Promise.all([env.FILES.delete(key), env.FILES.delete(textKey)]);
     throw error;
   }
   return Response.json(
     {
+      readUrl: `/adapt?title=${encodeURIComponent(safeTitle)}&source=${encodeURIComponent(`upload:${id}`)}`,
       book: {
         id,
         title: safeTitle,
-        source: '个人 PDF',
+        source: `个人 ${extension.toUpperCase()}`,
         size: file.size,
         progress: 0,
-        status: '等待准备',
+        status: '第一章已准备',
         createdAt: Date.now(),
       },
     },
-    { status: 201 },
+    { status: 201, headers: { 'x-read-url': `/adapt?title=${encodeURIComponent(safeTitle)}&source=${encodeURIComponent(`upload:${id}`)}` } },
   );
 }
 
@@ -152,6 +158,6 @@ export async function DELETE(request: Request) {
   if (!book) return Response.json({ error: '没有找到这本书' }, { status: 404 });
   await env.DB.prepare('DELETE FROM shelf_books WHERE id = ? AND user_id = ?')
     .bind(id, user.userId).run();
-  if (book.fileKey) await env.FILES.delete(book.fileKey);
+  if (book.fileKey) await Promise.all([env.FILES.delete(book.fileKey), env.FILES.delete(`${book.fileKey}.chapter.txt`)]);
   return Response.json({ removed: true });
 }

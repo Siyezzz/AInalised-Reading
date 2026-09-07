@@ -6,10 +6,11 @@ import {
   FileText,
   LogOut,
   Search,
-  Download,
+  Upload,
   Trash2,
 } from 'lucide-react';
 import BrandMark from '../brand-mark';
+import { extractFirstChapter } from '../lib/extract-book';
 
 type ShelfBook = {
   id: string;
@@ -34,6 +35,7 @@ export default function ShelfClient({
     [loading, setLoading] = useState(true),
     [loadError, setLoadError] = useState('');
   const [removing, setRemoving] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
     fetch('/api/library', { cache: 'no-store', credentials: 'include' })
@@ -50,10 +52,15 @@ export default function ShelfClient({
   async function upload(file?: File) {
     if (!file) return;
     setBusy(true);
-    setMessage('正在安全上传…');
+    setUploadProgress(4);
+    setMessage('正在读取文件');
     const form = new FormData();
-    form.append('file', file);
     try {
+      const extractedText = await extractFirstChapter(file, (value, label) => { setUploadProgress(value); setMessage(label); });
+      setUploadProgress(64);
+      setMessage('正在保存正文来源');
+      form.append('file', file);
+      form.append('extractedText', extractedText);
       const response = await fetch('/api/library', {
         method: 'POST',
         body: form,
@@ -61,7 +68,9 @@ export default function ShelfClient({
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || '上传失败');
       setBooks((current) => [data.book, ...current]);
-      setMessage('已放进你的书架');
+      setUploadProgress(100);
+      setMessage('第一章已经提取，正在进入 AI 改写');
+      window.setTimeout(() => { window.location.href = data.readUrl; }, 500);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '上传失败');
     } finally {
@@ -128,12 +137,12 @@ export default function ShelfClient({
           </p>
         </div>
         <label className={busy ? 'upload-control busy' : 'upload-control'}>
-          <Download size={18} />
-          <span>{busy ? '正在上传' : '导入 PDF'}</span>
+          <Upload size={18} />
+          <span>{busy ? '正在准备' : '导入电子书'}</span>
           <input
             ref={input}
             type="file"
-            accept="application/pdf,.pdf"
+            accept="application/pdf,.pdf,application/epub+zip,.epub,.mobi,.azw3,.kf8,text/plain,.txt"
             disabled={busy}
             onChange={(e) => upload(e.target.files?.[0])}
           />
@@ -142,7 +151,7 @@ export default function ShelfClient({
       {message && (
         <div className="upload-message">
           <Check size={15} />
-          {message}
+          <div><span>{message}</span>{busy && <i><b style={{ width: `${uploadProgress}%` }} /></i>}</div>
         </div>
       )}
       <section className="shelf-grid">
@@ -158,7 +167,7 @@ export default function ShelfClient({
           <article className="shelf-book" key={book.id}>
             <div className="pdf-cover">
               {book.sourceUrl ? <BookOpen size={25} /> : <FileText size={25} />}
-              <small>{book.sourceUrl ? 'WEB' : 'PDF'}</small>
+              <small>{book.sourceUrl ? 'WEB' : 'FILE'}</small>
             </div>
             <div>
               <span>{book.source}</span>
@@ -174,7 +183,7 @@ export default function ShelfClient({
               <small>阅读进度 {book.progress}%</small>
             </div>
             <div className="shelf-book-actions">
-              <a className="continue-reading" href={book.title === '爱丽丝漫游奇境' ? '/chapter/alice' : book.sourceUrl ? `/adapt?title=${encodeURIComponent(book.title)}&source=${encodeURIComponent(book.sourceUrl)}` : `/pdf?id=${encodeURIComponent(book.id)}&title=${encodeURIComponent(book.title)}`}>继续阅读</a>
+              <a className="continue-reading" href={book.title === '爱丽丝漫游奇境' ? '/chapter/alice' : `/adapt?title=${encodeURIComponent(book.title)}&source=${encodeURIComponent(book.sourceUrl || `upload:${book.id}`)}`}>继续阅读</a>
               <button className="remove-book" onClick={() => removeBook(book)} disabled={removing === book.id} aria-label={`把《${book.title}》移出书架`}><Trash2 size={16} />{removing === book.id ? '正在移除' : '移出'}</button>
             </div>
           </article>
@@ -183,8 +192,8 @@ export default function ShelfClient({
           <div className="empty-shelf">
             <FileText size={30} />
             <h2>书架还是空的</h2>
-            <p>从搜索结果开始阅读并加入书架，或导入你拥有合法阅读权的 PDF。</p>
-            <button onClick={() => input.current?.click()}>选择 PDF</button>
+            <p>从搜索结果开始阅读并加入书架，或导入你拥有合法阅读权的电子书。导入后会提取第一章并开始 AI 改写。</p>
+            <button onClick={() => input.current?.click()}>选择电子书</button>
           </div>
         )}
       </section>

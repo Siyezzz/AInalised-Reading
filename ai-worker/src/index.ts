@@ -151,13 +151,16 @@ export default {
   async fetch(request: Request, env: EditorEnv): Promise<Response> {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { 'access-control-allow-origin': 'https://zhiji-reading.li-siye-0123.chatgpt.site', 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'POST, OPTIONS', 'access-control-max-age': '86400' } });
     if (request.method !== 'POST') return json({ error: 'METHOD_NOT_ALLOWED' }, 405);
-    const body = await request.json<{ title?: string; profile?: { goal?: string; level?: string; likes?: string[] }; feedback?: string; wrongAnswerType?: string }>();
+    const body = await request.json<{ title?: string; profile?: { goal?: string; level?: string; likes?: string[] }; feedback?: string; wrongAnswerType?: string; sourceText?: string }>();
     const title = body.title?.trim();
     if (!title) return json({ error: 'TITLE_REQUIRED' }, 400);
     const bearer = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') || '';
     if (bearer !== env.EDITOR_SECRET && !(await validSignedToken(bearer, env.EDITOR_SECRET, title))) return json({ error: 'UNAUTHORIZED' }, 401);
     try {
-      const resolved = await resolvePublicChapter(title);
+      const uploadedText = body.sourceText?.trim().slice(0, 80_000);
+      const resolved = uploadedText && uploadedText.length >= 500
+        ? { text: uploadedText, url: 'user-upload' }
+        : await resolvePublicChapter(title);
       if (!resolved) return json({ error: 'SOURCE_NOT_FOUND', message: '暂时没有找到可核验的第一章正文。系统会继续扩充来源，不会把查找工作交给读者。' }, 422);
       const source = resolved.text;
       const result = await env.AI.run('@cf/zai-org/glm-4.7-flash', {

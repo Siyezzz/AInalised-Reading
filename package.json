@@ -14,6 +14,8 @@
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",
+    "@lingo-reader/epub-parser": "^0.4.6",
+    "@lingo-reader/mobi-parser": "^0.4.6",
     "@shadcn/react": "0.3.0",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
@@ -23,6 +25,7 @@
     "embla-carousel-react": "8.5.2",
     "input-otp": "1.4.2",
     "lucide-react": "1.31.0",
+    "pdfjs-dist": "^6.3.289",
     "react": "19.2.6",
     "react-day-picker": "9.8.1",
     "react-dom": "19.2.6",
