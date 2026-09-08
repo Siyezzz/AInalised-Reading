@@ -41,7 +41,8 @@ export default function ShelfClient({
   useEffect(() => {
     fetch('/api/library', { cache: 'no-store', credentials: 'include' })
       .then(async (response) => {
-        const data = await response.json() as { error?: string; books?: ShelfBook[]; book: ShelfBook; readUrl: string };
+        const text = await response.text();
+        const data = text ? JSON.parse(text) as { error?: string; books?: ShelfBook[]; book: ShelfBook; readUrl: string } : {} as { error?: string; books?: ShelfBook[]; book: ShelfBook; readUrl: string };
         if (!response.ok) throw new Error(data.error || '书架加载失败');
         setBooks(data.books || []);
       })
@@ -72,7 +73,8 @@ export default function ShelfClient({
         method: 'POST',
         body: form,
       });
-      const data = await response.json() as { error?: string; book: ShelfBook; readUrl: string };
+      const text = await response.text();
+      const data = text ? JSON.parse(text) as { error?: string; book: ShelfBook; readUrl: string } : {} as { error?: string; book: ShelfBook; readUrl: string };
       if (!response.ok) throw new Error(data.error || '上传失败');
       setBooks((current) => [data.book, ...current]);
       setUploadProgress(100);
