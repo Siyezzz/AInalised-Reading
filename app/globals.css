@@ -2409,6 +2409,20 @@ body {
 .adapt-progress i b { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #b98945, #1b6250); transition: width .7s ease; }
 .adapt-progress strong { color: #244c41; font-size: 14px; font-weight: 600; }
 .adapt-progress small { color: #8a7561; font-size: 13px; }
+.adapt-ready { margin-top: 26px; padding: clamp(24px, 4vw, 40px); border: 1px solid rgba(21,63,53,.12); border-radius: 24px; background: rgba(255,255,255,.76); box-shadow: 0 22px 60px rgba(21,63,53,.08); }
+.adapt-ready > div > span { color: #9a6c2e; font-size: 12px; font-weight: 700; letter-spacing: .12em; }
+.adapt-ready h2 { margin: 9px 0 8px; color: #173f35; font: 600 clamp(25px,4vw,36px)/1.3 var(--display); }
+.adapt-ready p { margin: 0; color: #68766f; line-height: 1.75; }
+.adapt-ready details { margin-top: 24px; padding: 15px 18px; border-radius: 13px; background: #edf3ef; color: #285f50; }
+.adapt-ready summary { cursor: pointer; font-weight: 650; }
+.adapt-ready pre { max-height: 300px; margin: 16px 0 0; overflow: auto; white-space: pre-wrap; color: #43534c; font: 14px/1.8 var(--display); }
+.adapt-primary,.chapter-actions button { display: inline-flex; width: auto; align-items: center; justify-content: center; gap: 7px; margin-top: 22px; padding: 12px 20px; border: 0; border-radius: 999px; background: #153f35; color: white; font-weight: 650; white-space: nowrap; cursor: pointer; }
+.chapter-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; }
+.chapter-actions button { margin-top: 0; }
+.chapter-actions button.secondary { border: 1px solid rgba(21,63,53,.18); background: rgba(255,255,255,.7); color: #285f50; }
+.chapter-actions button:disabled { opacity: .72; cursor: default; }
+.spin { animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .upload-message > div { flex: 1; }
 .upload-message > div > span { display: block; }
 .upload-message > div > i { display: block; width: min(360px, 100%); height: 5px; margin-top: 8px; overflow: hidden; border-radius: 99px; background: rgba(21, 63, 53, .10); }

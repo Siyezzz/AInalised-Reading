@@ -21,14 +21,29 @@ async function extractPdf(file: File, onProgress: (value: number, label: string)
   for (let pageNumber = 1; pageNumber <= limit; pageNumber += 1) {
     const page = await pdf.getPage(pageNumber);
     const content = await page.getTextContent();
-    pages.push(content.items.map(item => 'str' in item ? item.str + (item.hasEOL ? '\n' : ' ') : '').join(''));
+    const rows = new Map<number, { x: number; text: string }[]>();
+    for (const item of content.items) if ('str' in item && item.str.trim()) {
+      const transform = 'transform' in item ? item.transform : undefined;
+      const y = Math.round(Number(transform?.[5] || 0) / 2) * 2;
+      const x = Number(transform?.[4] || 0);
+      const row = rows.get(y) || []; row.push({ x, text: item.str }); rows.set(y, row);
+    }
+    const pageText = [...rows.entries()].sort((a,b) => b[0]-a[0]).map(([,items]) => items.sort((a,b)=>a.x-b.x).map(x=>x.text).join(' ')).join('\n')
+      .replace(/([\u3400-\u9fff])\s+(?=[\u3400-\u9fff])/g, '$1');
+    pages.push(pageText);
     page.cleanup();
     onProgress(10 + Math.round((pageNumber / limit) * 45), `正在识别第 ${pageNumber} 页`);
     if (chaptersFromText(pages.join('\n')).length >= 2) break;
+    if (pageNumber >= 40 && pages.join('').length > 40_000) break;
   }
   await loadingTask.destroy();
   if (pages.join('').replace(/\s/g, '').length < 150) throw new Error('扫描版 PDF 没有文字层，暂时无法自动识别；请导入文字版或 EPUB');
-  return chapterWindow(pages.join('\n\n'));
+  const joined = pages.join('\n\n');
+  try { return chapterWindow(joined); }
+  catch (error) {
+    if (joined.length >= 120_000) return joined.slice(0, 60_000);
+    throw error;
+  }
 }
 
 async function extractEpub(file: File, onProgress: (value: number, label: string) => void) {
