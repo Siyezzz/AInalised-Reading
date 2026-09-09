@@ -95,6 +95,12 @@ export async function POST(request: Request) {
   if (!extension) return Response.json({ error: '支持 PDF、EPUB、MOBI、AZW3 和 TXT' }, { status: 400 });
   if ((file as File).size > 25 * 1024 * 1024)
     return Response.json({ error: '文件不能超过 25MB' }, { status: 400 });
+  const MAX_FILES_PER_USER = 30;
+  const countRow = await env.DB.prepare(
+    'SELECT COUNT(*) AS count FROM shelf_books WHERE user_id = ? AND file_key IS NOT NULL',
+  ).bind(user.userId).first<{ count: number }>();
+  if ((countRow?.count || 0) >= MAX_FILES_PER_USER)
+    return Response.json({ error: '每人最多保存 30 本导入书籍，请删除旧书后再上传' }, { status: 429 });
   const hasText = typeof extractedText === 'string' && extractedText.trim().length >= 500;
   const id = crypto.randomUUID();
   const safeTitle = (file as File).name.replace(/\.(pdf|epub|mobi|azw3|kf8|txt)$/i, '').trim() || '未命名书籍';

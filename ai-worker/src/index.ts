@@ -4,14 +4,14 @@ import { resolveSource } from './sources';
 interface EditorEnv extends Cloudflare.Env, JobEnv { EDITOR_SECRET: string; AI: Ai }
 
 const ALLOWED_ORIGINS = new Set([
-  'https://zhiji-reading.your-account.workers.dev', // 部署后替换为真实 workers.dev 域名
-  'https://zhiji-reading.pages.dev',                 // 或 Cloudflare Pages 域名
+  'https://zhiji-reading.li-siye-0123.workers.dev', // 主站 workers.dev 域名
+  'https://zhiji-reading.pages.dev',                 // Cloudflare Pages 域名（如后续启用）
   'http://localhost:5173',
   'http://localhost:4173',
 ]);
 function resolveOrigin(request: Request): string {
   const origin = request.headers.get('origin') || '';
-  return ALLOWED_ORIGINS.has(origin) ? origin : 'https://zhiji-reading.your-account.workers.dev';
+  return ALLOWED_ORIGINS.has(origin) ? origin : 'https://zhiji-reading.li-siye-0123.workers.dev';
 }
 function json(data: unknown, status: number, request: Request) {
   return Response.json(data, { status, headers: { 'cache-control': 'no-store', 'access-control-allow-origin': resolveOrigin(request), 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'POST, OPTIONS' } });

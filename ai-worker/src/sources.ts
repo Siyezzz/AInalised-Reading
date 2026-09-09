@@ -5,7 +5,7 @@ export const CLASSICS: Record<string, string> = {
   '儒林外史': '儒林外史', '聊斋志异': '聊齋志異', '聊齋志異': '聊齋志異',
 };
 const english: Record<string, string> = { '爱丽丝漫游奇境': '11', 'Alice in Wonderland': '11', "Alice’s Adventures in Wonderland": '11', 'Pride and Prejudice': '1342', '傲慢与偏见': '1342' };
-const headers = { 'user-agent': 'ZhijiReading/2.0 (public-domain reading app; https://zhiji-reading.li-siye-0123.chatgpt.site)' };
+const headers = { 'user-agent': 'ZhijiReading/2.0 (public-domain reading app; https://zhiji-reading.li-siye-0123.workers.dev)' };
 async function get(url: string) {
   const response = await fetch(url, { headers, signal: AbortSignal.timeout(18_000) });
   if (!response.ok) throw new Error(`SOURCE_HTTP_${response.status}`);

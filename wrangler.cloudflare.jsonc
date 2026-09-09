@@ -25,6 +25,9 @@
       "bucket_name": "zhiji-reading-files"
     }
   ],
+  "vars": {
+    "EDITOR_URL": "https://zhiji-reading-editor.li-siye-0123.workers.dev"
+  },
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1
