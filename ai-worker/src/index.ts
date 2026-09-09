@@ -81,24 +81,35 @@ export default {
         { role: 'system', content: '你是严谨的中文文学编辑。只依据提供的章节原文工作。交付完整连贯的一章，不是摘要。保留全部事件、说话者、行动主体、因果、场景转换和结尾状态。个性化作用于整章词汇、句长、解释密度和思考空间。语言像人写，少用口号、冒号和破折号。输出前在内部逐项核对人物、动作、顺序、数字与结尾，发现不一致必须修正。输出严格 JSON，不要代码围栏。' },
         { role: 'user', content: `书名：${title}\n阅读目标：${body.profile?.goal || '读懂故事'}\n阅读基础：${body.profile?.level || '平时会读一些'}\n兴趣：${body.profile?.likes?.join('、') || '尚未确定'}\n上一章反馈：${body.feedback || '无'}\n上次错题类型：${body.wrongAnswerType || '无'}\n\n原文：\n${source}\n\n请返回 {"chapterTitle":"...","chapter":["自然段1","自然段2"],"originalEvidence":[{"adapted":"改写中的关键句","original":"不超过30字或20个英文词的原文证据","note":"比较说明"}],"quiz":{"question":"需要推理的问题","options":["A项","B项","C项","D项"],"correctIndex":0,"rightFeedback":"...","wrongFeedback":["对应A的反馈","对应B的反馈","对应C的反馈","对应D的反馈"]},"imageCue":{"needed":true,"reason":"只有关键剧情才为true并说明原因","prompt":"用英文描述本章一个具体场景、人物外观和动作，绘本插图，无文字，最多150词"}}。错误选项分别体现范围夸大、因果倒置、无证据补充或只看一面。` },
       ];
-      let content: string;
+      let content = '';
+      let modelUsed = env.AGNES_MODEL || 'agnes-2.5-flash';
       if (env.AGNES_API_KEY) {
-        const r = await fetch('https://apihub.agnes-ai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: { authorization: `Bearer ${env.AGNES_API_KEY}`, 'content-type': 'application/json' },
-          body: JSON.stringify({
-            model: env.AGNES_MODEL || 'agnes-2.5-flash',
-            messages,
-            response_format: { type: 'json_object' },
-            temperature: 0.55,
-            max_tokens: 16000,
-          }),
-          signal: AbortSignal.timeout(240_000),
-        });
-        if (!r.ok) throw new Error(r.status === 429 ? 'AGNES_QUOTA' : `AGNES_HTTP_${r.status}`);
-        const x = await r.json() as { choices?: { message?: { content?: string } }[] };
-        content = x.choices?.[0]?.message?.content || '';
-      } else {
+        try {
+          const r = await fetch('https://apihub.agnes-ai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: { authorization: `Bearer ${env.AGNES_API_KEY}`, 'content-type': 'application/json' },
+            body: JSON.stringify({
+              model: env.AGNES_MODEL || 'agnes-2.5-flash',
+              messages,
+              response_format: { type: 'json_object' },
+              temperature: 0.55,
+              max_tokens: 16000,
+            }),
+            signal: AbortSignal.timeout(240_000),
+          });
+          if (!r.ok) {
+            const errorBody = await r.text().catch(() => 'unknown');
+            console.error(JSON.stringify({ event: 'agnes_error', status: r.status, body: errorBody.slice(0, 500) }));
+            throw new Error(`AGNES_HTTP_${r.status}: ${errorBody.slice(0, 200)}`);
+          }
+          const x = await r.json() as { choices?: { message?: { content?: string } }[] };
+          content = x.choices?.[0]?.message?.content || '';
+        } catch (agnesError) {
+          console.error(JSON.stringify({ event: 'agnes_fallback', error: agnesError instanceof Error ? agnesError.message : String(agnesError) }));
+        }
+      }
+      if (!content) {
+        modelUsed = '@cf/zai-org/glm-4.7-flash';
         const result = await env.AI.run('@cf/zai-org/glm-4.7-flash', {
           messages,
           response_format: { type: 'json_object' },
@@ -118,7 +129,7 @@ export default {
         throw parseError;
       }
       assertChapterShape(parsed);
-      return json({ content: parsed, source: resolved.url, model: env.AGNES_API_KEY ? (env.AGNES_MODEL || 'agnes-2.5-flash') : '@cf/zai-org/glm-4.7-flash', verified: 'model-self-check+structure-check' }, 200, request);
+      return json({ content: parsed, source: resolved.url, model: modelUsed, verified: 'model-self-check+structure-check' }, 200, request);
     } catch (error) {
       console.error(JSON.stringify({ event: 'adapt_failed', title, error: error instanceof Error ? error.message : String(error) }));
       return json({ error: 'GENERATION_FAILED', message: '改写未完成，请重试。', detail: error instanceof Error ? error.message : 'UNKNOWN' }, 502, request);
