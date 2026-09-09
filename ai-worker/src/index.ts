@@ -4,13 +4,14 @@ import { resolveSource } from './sources';
 interface EditorEnv extends Cloudflare.Env, JobEnv { EDITOR_SECRET: string; AI: Ai }
 
 const ALLOWED_ORIGINS = new Set([
-  'https://zhiji-reading.li-siye-0123.chatgpt.site',
+  'https://zhiji-reading.your-account.workers.dev', // 部署后替换为真实 workers.dev 域名
+  'https://zhiji-reading.pages.dev',                 // 或 Cloudflare Pages 域名
   'http://localhost:5173',
   'http://localhost:4173',
 ]);
 function resolveOrigin(request: Request): string {
   const origin = request.headers.get('origin') || '';
-  return ALLOWED_ORIGINS.has(origin) ? origin : 'https://zhiji-reading.li-siye-0123.chatgpt.site';
+  return ALLOWED_ORIGINS.has(origin) ? origin : 'https://zhiji-reading.your-account.workers.dev';
 }
 function json(data: unknown, status: number, request: Request) {
   return Response.json(data, { status, headers: { 'cache-control': 'no-store', 'access-control-allow-origin': resolveOrigin(request), 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'POST, OPTIONS' } });
@@ -25,20 +26,14 @@ async function validSignedToken(token: string, secret: string, title: string) {
 }
 
 function parseModelJson(value: string): unknown {
-  const clean = value.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-  try { return JSON.parse(clean); } catch {
-    let repaired = '';
-    let inString = false;
-    let escaped = false;
-    for (const char of clean) {
-      if (inString && (char === '\n' || char === '\r')) { repaired += '\\n'; continue; }
-      repaired += char;
-      if (escaped) { escaped = false; continue; }
-      if (char === '\\') { escaped = true; continue; }
-      if (char === '"') inString = !inString;
-    }
-    return JSON.parse(repaired);
-  }
+  const fenced = value.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  const candidate = fenced ? fenced[1].trim() : value.trim();
+  const firstBrace = candidate.indexOf('{');
+  const lastBrace = candidate.lastIndexOf('}');
+  const jsonLike = firstBrace >= 0 && lastBrace > firstBrace
+    ? candidate.slice(firstBrace, lastBrace + 1)
+    : candidate;
+  return JSON.parse(jsonLike);
 }
 
 function assertChapterShape(value: unknown) {
@@ -82,19 +77,39 @@ export default {
       if (!resolved) return json({ error: 'SOURCE_NOT_FOUND', message: '暂时没有找到可核验的第一章正文。系统会继续扩充来源，不会把查找工作交给读者。' }, 422, request);
       if (body.action === 'source') return json({ source: resolved }, 200, request);
       const source = resolved.text;
-      const result = await env.AI.run('@cf/zai-org/glm-4.7-flash', {
-        messages: [
-          { role: 'system', content: '你是严谨的中文文学编辑。只依据提供的章节原文工作。交付完整连贯的一章，不是摘要。保留全部事件、说话者、行动主体、因果、场景转换和结尾状态。个性化作用于整章词汇、句长、解释密度和思考空间。语言像人写，少用口号、冒号和破折号。输出前在内部逐项核对人物、动作、顺序、数字与结尾，发现不一致必须修正。输出严格 JSON，不要代码围栏。' },
-          { role: 'user', content: `书名：${title}\n阅读目标：${body.profile?.goal || '读懂故事'}\n阅读基础：${body.profile?.level || '平时会读一些'}\n兴趣：${body.profile?.likes?.join('、') || '尚未确定'}\n上一章反馈：${body.feedback || '无'}\n上次错题类型：${body.wrongAnswerType || '无'}\n\n原文：\n${source}\n\n请返回 {"chapterTitle":"...","chapter":["自然段1","自然段2"],"originalEvidence":[{"adapted":"改写中的关键句","original":"不超过30字或20个英文词的原文证据","note":"比较说明"}],"quiz":{"question":"需要推理的问题","options":["A项","B项","C项","D项"],"correctIndex":0,"rightFeedback":"...","wrongFeedback":["对应A的反馈","对应B的反馈","对应C的反馈","对应D的反馈"]},"imageCue":{"needed":true,"reason":"只有关键剧情才为true并说明原因","prompt":"用英文描述本章一个具体场景、人物外观和动作，绘本插图，无文字，最多150词"}}。错误选项分别体现范围夸大、因果倒置、无证据补充或只看一面。` },
-        ],
-        response_format: { type: 'json_object' },
-        reasoning_effort: 'low',
-        max_completion_tokens: 16000,
-        temperature: 0.55,
-      });
-      const completion = result as { choices?: Array<{ finish_reason?: string; message?: { content?: string } }> };
-      if (completion.choices?.[0]?.finish_reason === 'length') throw new Error('MODEL_OUTPUT_TRUNCATED');
-      const content = completion.choices?.[0]?.message?.content;
+      const messages = [
+        { role: 'system', content: '你是严谨的中文文学编辑。只依据提供的章节原文工作。交付完整连贯的一章，不是摘要。保留全部事件、说话者、行动主体、因果、场景转换和结尾状态。个性化作用于整章词汇、句长、解释密度和思考空间。语言像人写，少用口号、冒号和破折号。输出前在内部逐项核对人物、动作、顺序、数字与结尾，发现不一致必须修正。输出严格 JSON，不要代码围栏。' },
+        { role: 'user', content: `书名：${title}\n阅读目标：${body.profile?.goal || '读懂故事'}\n阅读基础：${body.profile?.level || '平时会读一些'}\n兴趣：${body.profile?.likes?.join('、') || '尚未确定'}\n上一章反馈：${body.feedback || '无'}\n上次错题类型：${body.wrongAnswerType || '无'}\n\n原文：\n${source}\n\n请返回 {"chapterTitle":"...","chapter":["自然段1","自然段2"],"originalEvidence":[{"adapted":"改写中的关键句","original":"不超过30字或20个英文词的原文证据","note":"比较说明"}],"quiz":{"question":"需要推理的问题","options":["A项","B项","C项","D项"],"correctIndex":0,"rightFeedback":"...","wrongFeedback":["对应A的反馈","对应B的反馈","对应C的反馈","对应D的反馈"]},"imageCue":{"needed":true,"reason":"只有关键剧情才为true并说明原因","prompt":"用英文描述本章一个具体场景、人物外观和动作，绘本插图，无文字，最多150词"}}。错误选项分别体现范围夸大、因果倒置、无证据补充或只看一面。` },
+      ];
+      let content: string;
+      if (env.AGNES_API_KEY) {
+        const r = await fetch('https://apihub.agnes-ai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${env.AGNES_API_KEY}`, 'content-type': 'application/json' },
+          body: JSON.stringify({
+            model: env.AGNES_MODEL || 'agnes-2.5-flash',
+            messages,
+            response_format: { type: 'json_object' },
+            temperature: 0.55,
+            max_tokens: 16000,
+          }),
+          signal: AbortSignal.timeout(240_000),
+        });
+        if (!r.ok) throw new Error(r.status === 429 ? 'AGNES_QUOTA' : `AGNES_HTTP_${r.status}`);
+        const x = await r.json() as { choices?: { message?: { content?: string } }[] };
+        content = x.choices?.[0]?.message?.content || '';
+      } else {
+        const result = await env.AI.run('@cf/zai-org/glm-4.7-flash', {
+          messages,
+          response_format: { type: 'json_object' },
+          reasoning_effort: 'low',
+          max_completion_tokens: 16000,
+          temperature: 0.55,
+        });
+        const completion = result as { choices?: Array<{ finish_reason?: string; message?: { content?: string } }> };
+        if (completion.choices?.[0]?.finish_reason === 'length') throw new Error('MODEL_OUTPUT_TRUNCATED');
+        content = completion.choices?.[0]?.message?.content || '';
+      }
       if (!content) throw new Error('EMPTY_MODEL_RESPONSE');
       let parsed: unknown;
       try { parsed = parseModelJson(content); }
@@ -103,11 +118,10 @@ export default {
         throw parseError;
       }
       assertChapterShape(parsed);
-      return json({ content: parsed, source: resolved.url, model: '@cf/zai-org/glm-4.7-flash', verified: 'model-self-check+structure-check' }, 200, request);
+      return json({ content: parsed, source: resolved.url, model: env.AGNES_API_KEY ? (env.AGNES_MODEL || 'agnes-2.5-flash') : '@cf/zai-org/glm-4.7-flash', verified: 'model-self-check+structure-check' }, 200, request);
     } catch (error) {
       console.error(JSON.stringify({ event: 'adapt_failed', title, error: error instanceof Error ? error.message : String(error) }));
       return json({ error: 'GENERATION_FAILED', message: '改写未完成，请重试。', detail: error instanceof Error ? error.message : 'UNKNOWN' }, 502, request);
     }
   },
 } satisfies ExportedHandler<EditorEnv>;
-

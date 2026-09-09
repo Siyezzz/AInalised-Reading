@@ -63,7 +63,7 @@ export default function ShelfClient({
       try {
         extractedText = await extractFirstChapter(file, (value, label) => { setUploadProgress(value); setMessage(label); });
       } catch (extractError) {
-        throw extractError;
+        extractionFailed = true;
       }
       setUploadProgress(64);
       setMessage('正在保存文件');
@@ -72,6 +72,7 @@ export default function ShelfClient({
       const response = await fetch('/api/library', {
         method: 'POST',
         body: form,
+        credentials: 'include',
       });
       const text = await response.text();
       const data = text ? JSON.parse(text) as { error?: string; book: ShelfBook; readUrl: string } : {} as { error?: string; book: ShelfBook; readUrl: string };
@@ -216,4 +217,3 @@ export default function ShelfClient({
     </main>
   );
 }
-

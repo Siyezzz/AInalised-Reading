@@ -24,7 +24,7 @@ export async function POST(request: Request) {
       sourceUrl?: string;
     };
     const title = body.title?.trim().slice(0, 180);
-    const sourceUrl = body.sourceUrl?.trim();
+    const sourceUrl = body.sourceUrl?.trim().slice(0, 500);
     if (!title || !sourceUrl)
       return Response.json({ error: '缺少书名或来源' }, { status: 400 });
     let source: URL;
@@ -88,19 +88,20 @@ export async function POST(request: Request) {
   const form = await request.formData();
   const file = form.get('file');
   const extractedText = form.get('extractedText');
-  if (!(file instanceof File))
+  if (!file || typeof file !== 'object' || !('name' in file)) {
     return Response.json({ error: '请选择电子书文件' }, { status: 400 });
-  const extension = file.name.toLowerCase().match(/\.(pdf|epub|mobi|azw3|kf8|txt)$/)?.[1];
+  }
+  const extension = (file as File).name.toLowerCase().match(/\.(pdf|epub|mobi|azw3|kf8|txt)$/)?.[1];
   if (!extension) return Response.json({ error: '支持 PDF、EPUB、MOBI、AZW3 和 TXT' }, { status: 400 });
-  if (file.size > 25 * 1024 * 1024)
+  if ((file as File).size > 25 * 1024 * 1024)
     return Response.json({ error: '文件不能超过 25MB' }, { status: 400 });
   const hasText = typeof extractedText === 'string' && extractedText.trim().length >= 500;
   const id = crypto.randomUUID();
-  const safeTitle = file.name.replace(/\.(pdf|epub|mobi|azw3|kf8|txt)$/i, '').trim() || '未命名书籍';
+  const safeTitle = (file as File).name.replace(/\.(pdf|epub|mobi|azw3|kf8|txt)$/i, '').trim() || '未命名书籍';
   const key = `${user.userId}/${id}.${extension}`;
-  await env.FILES.put(key, file.stream(), {
-    httpMetadata: { contentType: file.type || 'application/octet-stream' },
-    customMetadata: { owner: user.userId, originalName: file.name },
+  await env.FILES.put(key, (file as File).stream(), {
+    httpMetadata: { contentType: (file as File).type || 'application/octet-stream' },
+    customMetadata: { owner: user.userId, originalName: (file as File).name },
   });
   if (hasText) {
     const textKey = `${key}.chapter.txt`;
@@ -109,6 +110,7 @@ export async function POST(request: Request) {
       customMetadata: { owner: user.userId, purpose: 'first-chapter-source' },
     });
   }
+  const sourceUrlForUpload = `upload:${id}`;
   const status = hasText ? '第一章已准备' : '已导入，待提取正文';
   try {
     await env.DB.prepare(
@@ -119,10 +121,10 @@ export async function POST(request: Request) {
         user.userId,
         safeTitle,
         `个人 ${extension.toUpperCase()}`,
-        null,
+        sourceUrlForUpload,
         key,
-        file.type || 'application/octet-stream',
-        file.size,
+        (file as File).type || 'application/octet-stream',
+        (file as File).size,
         0,
         status,
         Date.now(),
@@ -134,18 +136,18 @@ export async function POST(request: Request) {
   }
   return Response.json(
     {
-      readUrl: hasText ? `/adapt?title=${encodeURIComponent(safeTitle)}&source=${encodeURIComponent(`upload:${id}`)}` : `/pdf?id=${encodeURIComponent(id)}&title=${encodeURIComponent(safeTitle)}`,
+      readUrl: hasText ? `/adapt?title=${encodeURIComponent(safeTitle)}&source=${encodeURIComponent(sourceUrlForUpload)}` : `/pdf?id=${encodeURIComponent(id)}&title=${encodeURIComponent(safeTitle)}`,
       book: {
         id,
         title: safeTitle,
         source: `个人 ${extension.toUpperCase()}`,
-        size: file.size,
+        size: (file as File).size,
         progress: 0,
         status,
         createdAt: Date.now(),
       },
     },
-    { status: 201, headers: { 'x-read-url': `/adapt?title=${encodeURIComponent(safeTitle)}&source=${encodeURIComponent(`upload:${id}`)}` } },
+    { status: 201, headers: { 'x-read-url': `/adapt?title=${encodeURIComponent(safeTitle)}&source=${encodeURIComponent(sourceUrlForUpload)}` } },
   );
 }
 
