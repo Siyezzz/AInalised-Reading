@@ -62,7 +62,7 @@ export default function ShelfClient({
       let extractedText = '';
       try {
         extractedText = await extractFirstChapter(file, (value, label) => { setUploadProgress(value); setMessage(label); });
-      } catch (extractError) {
+      } catch {
         extractionFailed = true;
       }
       setUploadProgress(64);

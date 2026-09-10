@@ -23,10 +23,16 @@ export async function POST(request: Request) {
   }
   const cached = await env.DB.prepare('SELECT content FROM adapted_chapters WHERE user_id = ? AND title = ? AND source_url = ? AND profile_hash = ? LIMIT 1').bind(user.userId, title, sourceUrl, hash).first<{ content: string }>();
   if (cached) return Response.json({ content: JSON.parse(cached.content), cached: true });
+  let sourceText: string | undefined;
   if (sourceUrl.startsWith('upload:')) {
-    return Response.json({ error: '本地上传已关闭，请从发现页导入公开来源的书籍。' }, { status: 400 });
+    const uploadId = sourceUrl.slice('upload:'.length);
+    const uploaded = await env.DB.prepare('SELECT file_key AS fileKey FROM shelf_books WHERE id = ? AND user_id = ? AND file_key IS NOT NULL LIMIT 1').bind(uploadId, user.userId).first<{ fileKey: string }>();
+    if (!uploaded) return Response.json({ error: '没有找到这份导入文件' }, { status: 404 });
+    const object = await env.FILES.get(`${uploaded.fileKey}.chapter.txt`);
+    if (!object) return Response.json({ error: '这份文件的文字尚未提取，无法进行 AI 改写。请先在书架上查看原文，或重新导入文字版 PDF、EPUB 或 TXT。', needExtraction: true }, { status: 422 });
+    sourceText = (await object.text()).slice(0, 80_000);
   }
   const payload = bytesToBase64Url(new TextEncoder().encode(JSON.stringify({ title, uid: user.userId, exp: Date.now() + 60 * 60_000 })));
   const token = `v1.${payload}.${await sign(payload, runtime.EDITOR_SECRET)}`;
-  return Response.json({ editorUrl: runtime.EDITOR_URL, token, profile: normalizedProfile }, { status: 202 });
+  return Response.json({ editorUrl: runtime.EDITOR_URL, token, profile: normalizedProfile, sourceText }, { status: 202 });
 }
