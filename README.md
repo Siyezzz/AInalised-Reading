@@ -6,7 +6,7 @@
 
 **公开网站：[知己读书](https://zhiji-reading.li-siye-0123.workers.dev/)**
 
-这是一个共享平台，任何人打开链接即可浏览；个人书架、云端阅读画像等功能只需要登录自己的账号（通过邮箱/匿名 reader_id 即可），不需要每个人去注册 Cloudflare 或部署自己的站点。
+这是一个共享平台，任何人打开链接即可浏览；个人书架、阅读画像和电子书导入会使用自己的浏览器身份（匿名 reader_id 或平台登录信息），不需要每个人去注册 Cloudflare 或部署自己的站点。
 
 ## 本地运行
 
@@ -25,7 +25,7 @@ npm run build
 
 > 以下步骤只需要维护者执行一次，普通读者直接访问上面的公开网站即可。
 
-1. 确保 `wrangler.cloudflare.jsonc` 中的 D1 数据库绑定已创建（本项目已移除 R2，完全使用 Cloudflare 免费套餐）。
+1. 确保 `wrangler.cloudflare.jsonc` 中的 D1 数据库绑定已创建，绑定名为 `DB`。PDF 文件导入暂时暂停，当前主流程不需要 R2。
 2. 设置 Agnes API Key：
    ```bash
    npx wrangler secret put AGNES_API_KEY --config wrangler.cloudflare.jsonc
