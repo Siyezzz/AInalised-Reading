@@ -12,7 +12,12 @@ export default function ProfileClient({ email }: { email: string }) {
     [likes, setLikes] = useState<string[]>([]),
     [saved, setSaved] = useState(false),
     [bookStatus, setBookStatus] = useState<'idle' | 'saving' | 'error'>('idle'),
-    [bookError, setBookError] = useState('');
+    [bookError, setBookError] = useState(''),
+    [aiProvider, setAiProvider] = useState('system-agnes'),
+    [apiBaseUrl, setApiBaseUrl] = useState('https://api.openai.com/v1'),
+    [apiModel, setApiModel] = useState(''),
+    [apiKey, setApiKey] = useState(''),
+    [modelSaved, setModelSaved] = useState(false);
   useEffect(() => {
     fetch('/api/profile')
       .then((r) => r.json())
@@ -24,6 +29,15 @@ export default function ProfileClient({ email }: { email: string }) {
         }
       });
   }, []);
+  useEffect(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem('zhiji-ai-settings') || '{}') as { aiProvider?: string; apiBaseUrl?: string; apiModel?: string; apiKey?: string };
+      if (raw.aiProvider) setAiProvider(raw.aiProvider);
+      if (raw.apiBaseUrl) setApiBaseUrl(raw.apiBaseUrl);
+      if (raw.apiModel) setApiModel(raw.apiModel);
+      if (raw.apiKey) setApiKey(raw.apiKey);
+    } catch { /* Ignore broken local settings. */ }
+  }, []);
   function toggle(x: string) {
     setLikes((v) => (v.includes(x) ? v.filter((i) => i !== x) : [...v, x]));
   }
@@ -34,6 +48,13 @@ export default function ProfileClient({ email }: { email: string }) {
       body: JSON.stringify({ goal, level, likes }),
     });
     if (response.ok) setSaved(true);
+  }
+  function saveModelSettings() {
+    const value = aiProvider === 'openai-compatible'
+      ? { aiProvider, apiBaseUrl: apiBaseUrl.trim(), apiModel: apiModel.trim(), apiKey: apiKey.trim() }
+      : { aiProvider };
+    localStorage.setItem('zhiji-ai-settings', JSON.stringify(value));
+    setModelSaved(true);
   }
   async function startReading() {
     if (!book || bookStatus === 'saving') return;
@@ -123,6 +144,38 @@ export default function ProfileClient({ email }: { email: string }) {
                 {x}
               </button>
             ))}
+          </fieldset>
+          <fieldset className="model-settings">
+            <legend>改写模型</legend>
+            <label>
+              连接方式
+              <select value={aiProvider} onChange={(event) => { setAiProvider(event.target.value); setModelSaved(false); }}>
+                <option value="system-agnes">默认 Agnes</option>
+                <option value="cloudflare-free">Cloudflare 免费模型</option>
+                <option value="openai-compatible">我的 API key</option>
+              </select>
+            </label>
+            {aiProvider === 'openai-compatible' ? (
+              <>
+                <label>
+                  Base URL
+                  <input value={apiBaseUrl} onChange={(event) => { setApiBaseUrl(event.target.value); setModelSaved(false); }} placeholder="https://api.openai.com/v1" />
+                </label>
+                <label>
+                  Model
+                  <input value={apiModel} onChange={(event) => { setApiModel(event.target.value); setModelSaved(false); }} placeholder="gpt-4o-mini / gpt-4.1-mini / provider model id" />
+                </label>
+                <label>
+                  API key
+                  <input type="password" value={apiKey} onChange={(event) => { setApiKey(event.target.value); setModelSaved(false); }} placeholder="sk-..." autoComplete="off" />
+                </label>
+              </>
+            ) : (
+              <p>{aiProvider === 'cloudflare-free' ? '优先尝试 Cloudflare Workers AI；额度不可用时回退到系统 Agnes。' : '不需要填写 key；优先使用系统 Agnes，失败时回退到 Cloudflare 免费模型。'}</p>
+            )}
+            <button type="button" className="save-model" onClick={saveModelSettings}>
+              {modelSaved ? '模型已保存' : '保存模型设置'}
+            </button>
           </fieldset>
           <button className="save-profile" onClick={save}>
             {saved ? (

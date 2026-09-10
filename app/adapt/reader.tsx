@@ -5,7 +5,19 @@ import { BookOpen, BookmarkPlus, Check, ExternalLink, LoaderCircle } from 'lucid
 type Chapter = { chapterTitle: string; chapter: string[]; image?: string; source?: string; originalEvidence?: { adapted: string; original: string; note: string }[]; quiz: { question: string; options: string[]; correctIndex: number; rightFeedback: string; wrongFeedback: string[] }; imageCue?: { prompt: string } };
 type Ticket = { editorUrl: string; token: string; profile: Record<string, unknown>; sourceText?: string; content?: Chapter; error?: string };
 type Result = { job?: { status: string; output?: Chapter; error?: { message?: string } }; content?: Chapter; source?: { title: string; text: string; url: string }; image?: string; message?: string; detail?: string; error?: string };
+type AiSettings = { aiProvider?: string; apiBaseUrl?: string; apiModel?: string; apiKey?: string };
 function validChapter(x: Chapter) { return x && typeof x.chapterTitle === 'string' && Array.isArray(x.chapter) && x.chapter.length >= 4 && x.chapter.every(p => typeof p === 'string' && p.trim()) && x.quiz && typeof x.quiz.question === 'string' && x.quiz.options?.length === 4 && x.quiz.options.every(o => typeof o === 'string') && Number.isInteger(x.quiz.correctIndex) && x.quiz.correctIndex >= 0 && x.quiz.correctIndex < 4 && x.quiz.wrongFeedback?.length === 4; }
+function readAiSettings(): AiSettings {
+  try {
+    const raw = JSON.parse(localStorage.getItem('zhiji-ai-settings') || '{}') as AiSettings;
+    return {
+      aiProvider: raw.aiProvider,
+      apiBaseUrl: raw.apiBaseUrl,
+      apiModel: raw.apiModel,
+      apiKey: raw.apiKey,
+    };
+  } catch { return {}; }
+}
 export default function AdaptReader() {
   const params = useSearchParams(), title = params.get('title') || '', source = params.get('source') || '';
   const [chapter, setChapter] = useState<Chapter | null>(null), [error, setError] = useState(''), [label, setLabel] = useState('正在获取原文'), [busy, setBusy] = useState(true), [prepared, setPrepared] = useState<Result['source']>(), [answer, setAnswer] = useState<number | null>(null), [notice, setNotice] = useState(''), [attempt, setAttempt] = useState(0);
@@ -15,7 +27,8 @@ export default function AdaptReader() {
   const storageKey = 'reading-job:' + title + ':' + source;
   async function call(body: Record<string, unknown>): Promise<Result> {
     const t = ticket.current!;
-    const r = await fetch(t.editorUrl, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` }, body: JSON.stringify({ title, sourceUrl: source, profile: t.profile, ...body }), signal: AbortSignal.timeout(240_000) });
+    const aiSettings = body.action === 'start-job' || body.action === 'image' ? readAiSettings() : {};
+    const r = await fetch(t.editorUrl, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` }, body: JSON.stringify({ title, sourceUrl: source, profile: t.profile, ...aiSettings, ...body }), signal: AbortSignal.timeout(240_000) });
     const x = await r.json() as Result;
     if (!r.ok) throw new Error([x.message || x.error || '服务请求失败', x.detail].filter(Boolean).join('：'));
     return x;
@@ -46,7 +59,7 @@ export default function AdaptReader() {
     if (!content.imageCue?.prompt) throw new Error('没有生成插图描述，请重试改写');
     setLabel('正在绘制本章插图');
     const result = await call({ action: 'image', prompt: content.imageCue.prompt });
-    if (!result.image?.startsWith('data:image/jpeg;base64,')) throw new Error('没有收到插图');
+    if (!result.image || !(/^data:image\/(jpeg|png|svg\+xml);base64,/.test(result.image) || /^https?:\/\//.test(result.image))) throw new Error('没有收到插图');
     const complete = { ...content, image: result.image }; setChapter(complete); await cache(complete);
   }
   useEffect(() => {

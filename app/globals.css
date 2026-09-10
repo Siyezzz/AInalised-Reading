@@ -1061,6 +1061,42 @@ footer p {
   background: #e8f1ec;
   color: #185c4e;
 }
+.model-settings {
+  display: grid;
+  gap: 12px;
+  max-width: 620px;
+}
+.model-settings label {
+  display: grid;
+  gap: 7px;
+  color: #4b5852;
+  font-size: 13px;
+  font-weight: 700;
+}
+.model-settings input,
+.model-settings select {
+  width: 100%;
+  min-height: 43px;
+  padding: 10px 12px;
+  border: 1px solid #d7d9d3;
+  border-radius: 8px;
+  background: #fff;
+  color: #233b33;
+  font: 400 14px/1.35 var(--sans);
+}
+.model-settings p {
+  margin: 0;
+  color: #68736d;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.profile-form fieldset .save-model {
+  justify-self: start;
+  margin-top: 2px;
+  border-color: #397c6b;
+  background: #153f35;
+  color: #fff;
+}
 .save-profile {
   margin-top: 8px;
 }
@@ -1745,6 +1781,17 @@ body {
 .profile-form fieldset button:hover {
   transform: translateY(-1px);
   border-color: #7ea296;
+}
+.profile-form .model-settings {
+  display: grid;
+  gap: 12px;
+}
+.profile-form .model-settings button {
+  border-radius: 8px;
+}
+.profile-form .model-settings input,
+.profile-form .model-settings select {
+  background: rgba(255, 255, 255, 0.78);
 }
 .profile-insight {
   top: 105px;
