@@ -28,5 +28,5 @@ export async function POST(request: Request) {
   }
   const payload = bytesToBase64Url(new TextEncoder().encode(JSON.stringify({ title, uid: user.userId, exp: Date.now() + 60 * 60_000 })));
   const token = `v1.${payload}.${await sign(payload, runtime.EDITOR_SECRET)}`;
-  return Response.json({ editorUrl: runtime.EDITOR_URL, token, profile: normalizedProfile, sourceText }, { status: 202 });
+  return Response.json({ editorUrl: runtime.EDITOR_URL, token, profile: normalizedProfile }, { status: 202 });
 }

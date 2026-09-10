@@ -1,4 +1,5 @@
 import { headers } from 'next/headers';
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 export type ChatGPTUser = {
@@ -15,6 +16,7 @@ const USER_FULL_NAME_ENCODING_HEADER =
   'oai-authenticated-user-full-name-encoding';
 const PERCENT_ENCODED_UTF8 = 'percent-encoded-utf-8';
 const CLOUDFLARE_ACCESS_EMAIL_HEADER = 'cf-access-authenticated-user-email';
+const READER_ID_COOKIE = 'reader_id';
 const SIGN_IN_PATH = '/signin-with-chatgpt';
 const SIGN_OUT_PATH = '/signout-with-chatgpt';
 const CALLBACK_PATH = '/callback';
@@ -26,20 +28,31 @@ export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
   const cloudflareEmail = requestHeaders.get(CLOUDFLARE_ACCESS_EMAIL_HEADER);
   const resolvedEmail = email ?? cloudflareEmail;
   const resolvedUserId = userId ?? (cloudflareEmail ? `cf:${cloudflareEmail.toLowerCase()}` : null);
-  if (!resolvedUserId || !resolvedEmail) return null;
 
-  const encodedFullName = requestHeaders.get(USER_FULL_NAME_HEADER);
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get(USER_FULL_NAME_ENCODING_HEADER) === PERCENT_ENCODED_UTF8
-      ? safeDecodeURIComponent(encodedFullName)
-      : null;
+  if (resolvedUserId && resolvedEmail) {
+    const encodedFullName = requestHeaders.get(USER_FULL_NAME_HEADER);
+    const fullName =
+      encodedFullName &&
+      requestHeaders.get(USER_FULL_NAME_ENCODING_HEADER) === PERCENT_ENCODED_UTF8
+        ? safeDecodeURIComponent(encodedFullName)
+        : null;
+    return {
+      userId: resolvedUserId,
+      displayName: fullName ?? resolvedEmail,
+      email: resolvedEmail,
+      fullName,
+    };
+  }
 
+  // Fallback to anonymous cookie-based identity so the site works without OpenAI Sites / Cloudflare Access.
+  const cookieStore = await cookies();
+  const readerId = cookieStore.get(READER_ID_COOKIE)?.value;
+  if (!readerId) return null;
   return {
-    userId: resolvedUserId,
-    displayName: fullName ?? resolvedEmail,
-    email: resolvedEmail,
-    fullName,
+    userId: `anon:${readerId}`,
+    displayName: '读者',
+    email: `${readerId.slice(0, 12)}@anon.local`,
+    fullName: null,
   };
 }
 
