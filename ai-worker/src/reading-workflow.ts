@@ -88,18 +88,25 @@ async function completeAgnesJson(env: JobEnv, instruction: string, input: unknow
 }
 async function completeOpenAICompatibleJson(config: UserAiConfig, instruction: string, input: unknown, fetcher: typeof fetch = fetch) {
   if (!config.apiKey || !config.baseUrl || !config.model) throw new Error('USER_MODEL_CONFIG_INVALID');
-  const r = await fetcher(`${config.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: { authorization: `Bearer ${config.apiKey}`, 'content-type': 'application/json' },
-    body: JSON.stringify({
+  const body = {
       model: config.model,
       messages: [{ role: 'system', content: instruction }, { role: 'user', content: JSON.stringify(input) }],
       temperature: 0.35,
       max_tokens: 16000,
       response_format: { type: 'json_object' },
-    }),
+    };
+  const request = (payload: Record<string, unknown>) => fetcher(`${config.baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${config.apiKey}`, 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
     signal: AbortSignal.timeout(150_000),
   });
+  let r = await request(body);
+  if (r.status === 400 || r.status === 422) {
+    const plainBody = { ...body } as Record<string, unknown>;
+    delete plainBody.response_format;
+    r = await request(plainBody);
+  }
   if (!r.ok) throw new Error(`USER_MODEL_HTTP_${r.status}`);
   const rawResponse = await r.json() as { choices?: { message?: { content?: string }; text?: string }[]; response?: string; text?: string; content?: string };
   const text = extractTextFromAiResponse(rawResponse);

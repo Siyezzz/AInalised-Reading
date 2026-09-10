@@ -112,12 +112,19 @@ export default {
       async function callOpenAICompatible() {
         if (!aiConfig?.apiKey || !aiConfig.baseUrl || !aiConfig.model) throw new Error('USER_MODEL_CONFIG_INVALID');
         modelUsed = aiConfig.model;
-        const r = await fetch(`${aiConfig.baseUrl}/chat/completions`, {
+        const body = { model: modelUsed, messages, response_format: { type: 'json_object' }, temperature: 0.55, max_tokens: 16000 };
+        const requestUserModel = (payload: Record<string, unknown>) => fetch(`${aiConfig.baseUrl}/chat/completions`, {
           method: 'POST',
           headers: { authorization: `Bearer ${aiConfig.apiKey}`, 'content-type': 'application/json' },
-          body: JSON.stringify({ model: modelUsed, messages, response_format: { type: 'json_object' }, temperature: 0.55, max_tokens: 16000 }),
+          body: JSON.stringify(payload),
           signal: AbortSignal.timeout(150_000),
         });
+        let r = await requestUserModel(body);
+        if (r.status === 400 || r.status === 422) {
+          const plainBody = { ...body } as Record<string, unknown>;
+          delete plainBody.response_format;
+          r = await requestUserModel(plainBody);
+        }
         if (!r.ok) throw new Error(`USER_MODEL_HTTP_${r.status}`);
         return await r.json() as typeof completion;
       }
