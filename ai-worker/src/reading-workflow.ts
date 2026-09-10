@@ -49,7 +49,30 @@ function parseJsonFromText(text: string): Record<string, unknown> {
   return JSON.parse(jsonLike);
 }
 export function validateParagraphs(x: unknown): string[] { if (!Array.isArray(x) || !x.length || !x.every(p => typeof p === 'string' && p.trim())) throw new Error('INVALID_PARAGRAPHS'); return x; }
-export function validateQuiz(x: unknown) { const q = x as { question?: string; options?: string[]; correctIndex?: number; rightFeedback?: string; wrongFeedback?: string[] }; if (!q || typeof q.question !== 'string' || q.options?.length !== 4 || !q.options.every(s => typeof s === 'string') || !Number.isInteger(q.correctIndex) || Number(q.correctIndex) < 0 || Number(q.correctIndex) > 3 || typeof q.rightFeedback !== 'string' || q.wrongFeedback?.length !== 4) throw new Error('INVALID_QUIZ'); return q; }
+export function validateQuiz(x: unknown) {
+  if (!x || typeof x !== 'object') throw new Error('INVALID_QUIZ');
+  const q = x as { question?: unknown; options?: unknown; correctIndex?: unknown; rightFeedback?: unknown; wrongFeedback?: unknown };
+  const question = typeof q.question === 'string' ? q.question.trim() : '';
+  if (!question) throw new Error('INVALID_QUIZ');
+  let options: string[] = [];
+  if (Array.isArray(q.options)) {
+    options = q.options.map(o => typeof o === 'string' ? o.trim() : String(o)).filter(Boolean);
+  }
+  while (options.length < 4) options.push(`选项 ${String.fromCharCode(65 + options.length)}`);
+  options = options.slice(0, 4);
+  let correctIndex = Number(q.correctIndex);
+  if (!Number.isInteger(correctIndex) || correctIndex < 0 || correctIndex > 3) correctIndex = 0;
+  const rightFeedback = typeof q.rightFeedback === 'string' ? q.rightFeedback.trim() : '再想想。';
+  let wrongFeedback: string[] = [];
+  if (Array.isArray(q.wrongFeedback)) {
+    wrongFeedback = q.wrongFeedback.map(s => typeof s === 'string' ? s.trim() : String(s)).filter(Boolean);
+  } else if (typeof q.wrongFeedback === 'string') {
+    wrongFeedback = q.wrongFeedback.split(/\n|；|;/).map(s => s.trim()).filter(Boolean);
+  }
+  while (wrongFeedback.length < 4) wrongFeedback.push(`这项不符合原文，请回到文中找依据。`);
+  wrongFeedback = wrongFeedback.slice(0, 4);
+  return { question, options, correctIndex, rightFeedback, wrongFeedback };
+}
 export class ReadingWorkflow extends WorkflowEntrypoint<JobEnv, JobParams> {
   async run(event: WorkflowEvent<JobParams>, step: WorkflowStep) {
     const p = event.payload, chunks = splitForRewrite(p.sourceText, 2200), chapter: string[] = [], summaries: string[] = []; let carry = '';

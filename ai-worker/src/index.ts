@@ -40,7 +40,9 @@ function assertChapterShape(value: unknown) {
   if (!value || typeof value !== 'object') throw new Error('INVALID_CHAPTER_OBJECT');
   const item = value as { chapter?: unknown; quiz?: { options?: unknown; correctIndex?: unknown } };
   if (!Array.isArray(item.chapter) || item.chapter.length < 4 || !item.chapter.every((p) => typeof p === 'string' && p.trim().length > 0)) throw new Error('INCOMPLETE_CHAPTER');
-  if (!item.quiz || !Array.isArray(item.quiz.options) || item.quiz.options.length !== 4 || typeof item.quiz.correctIndex !== 'number' || item.quiz.correctIndex < 0 || item.quiz.correctIndex > 3) throw new Error('INVALID_QUIZ');
+  const options = Array.isArray(item.quiz?.options) ? item.quiz.options : [];
+  const correctIndex = typeof item.quiz?.correctIndex === 'number' ? item.quiz.correctIndex : Number(item.quiz?.correctIndex);
+  if (!item.quiz || options.length !== 4 || !Number.isInteger(correctIndex) || correctIndex < 0 || correctIndex > 3) throw new Error('INVALID_QUIZ');
 }
 
 export default {
