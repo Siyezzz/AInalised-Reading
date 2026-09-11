@@ -42,7 +42,7 @@ export function ChapterTemplate({ chapter, title, sourceUrl, chapterNumber, shel
         {shelfState === 'saved' ? <Check size={17} /> : shelfState === 'saving' ? <LoaderCircle className="spin" size={17} /> : <BookmarkPlus size={17} />}
         {shelfState === 'saved' ? '已加入书架' : shelfState === 'saving' ? '正在加入' : '加入书架'}
       </button>
-      <button className="secondary" onClick={onDownload}><Download size={17} />下载</button>
+      <button className="secondary" onClick={onDownload} title="导出本章改写内容（Markdown 文件）"><Download size={17} />导出本章</button>
       <a className="chapter-next-link" href={nextChapterUrl}><StepForward size={17} />下一章</a>
     </div>
     {shelfState === 'error' && <p className="chapter-save-message">加入失败，请登录后重试。</p>}

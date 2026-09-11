@@ -2,22 +2,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ExternalLink } from 'lucide-react';
+import { readAiSettings } from '../lib/ai-presets';
 import { ChapterTemplate, type Chapter } from './chapter-template';
 type Ticket = { editorUrl: string; token: string; profile: Record<string, unknown>; sourceText?: string; content?: Chapter; error?: string };
 type Result = { job?: { status: string; output?: Chapter; error?: { message?: string } }; content?: Chapter; source?: { title: string; text: string; url: string }; image?: string; message?: string; detail?: string; error?: string };
-type AiSettings = { aiProvider?: string; apiBaseUrl?: string; apiModel?: string; apiKey?: string };
 function validChapter(x: Chapter) { return x && typeof x.chapterTitle === 'string' && Array.isArray(x.chapter) && x.chapter.length >= 4 && x.chapter.every(p => typeof p === 'string' && p.trim()) && x.quiz && typeof x.quiz.question === 'string' && x.quiz.options?.length === 4 && x.quiz.options.every(o => typeof o === 'string') && Number.isInteger(x.quiz.correctIndex) && x.quiz.correctIndex >= 0 && x.quiz.correctIndex < 4 && x.quiz.wrongFeedback?.length === 4; }
-function readAiSettings(): AiSettings {
-  try {
-    const raw = JSON.parse(localStorage.getItem('zhiji-ai-settings') || '{}') as AiSettings;
-    return {
-      aiProvider: raw.aiProvider,
-      apiBaseUrl: raw.apiBaseUrl,
-      apiModel: raw.apiModel,
-      apiKey: raw.apiKey,
-    };
-  } catch { return {}; }
-}
 export default function AdaptReader() {
   const params = useSearchParams(), title = params.get('title') || '', source = params.get('source') || '';
   const chapterNumber = Math.max(1, Number.parseInt(params.get('chapter') || '1', 10) || 1);
@@ -108,16 +97,38 @@ export default function AdaptReader() {
     try { const r = await fetch('/api/library', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title, sourceUrl: original }) }); if (!r.ok) throw new Error(); setShelfState('saved'); }
     catch { setShelfState('error'); }
   }
+  function chapterMarkdown(c: Chapter) {
+    const lines = [`# ${c.chapterTitle}`, '', `> 《${title}》第 ${chapterNumber} 章`, ''];
+    c.chapter.forEach((p) => lines.push(p, ''));
+    if (c.imageCue?.prompt) lines.push(`插图描述：${c.imageCue.prompt}`, '');
+    if (c.originalEvidence?.length) {
+      lines.push('## 原文证据', '');
+      c.originalEvidence.forEach((e) => lines.push(`- 改写：${e.adapted}`, `  - 原文：${e.original}`, `  - 说明：${e.note}`));
+      lines.push('');
+    }
+    lines.push('## 章节小考察', '', c.quiz.question, '');
+    c.quiz.options.forEach((o, i) => lines.push(`- ${String.fromCharCode(65 + i)}. ${o}${i === c.quiz.correctIndex ? '（正确答案）' : ''}`));
+    lines.push('', `解析：${c.quiz.rightFeedback}`);
+    if (chapterFeedback) lines.push('', `本章反馈：${chapterFeedback}`);
+    return lines.join('\n');
+  }
   function download(value: string, name: string) {
-    const u = URL.createObjectURL(new Blob([value], { type: 'application/json;charset=utf-8' }));
-    const a = document.createElement('a');
-    a.href = u;
-    a.download = name;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(u), 10_000);
+    const u = URL.createObjectURL(new Blob([value], { type: 'text/markdown;charset=utf-8' }));
+    if (window.self !== window.top) {
+      // 站点被嵌在预览窗口里时 download 属性会被忽略，只能在新标签页兜底另存。
+      window.open(u, '_blank', 'noopener');
+      setNotice('已在新标签页打开本章内容，用浏览器的「另存为」保存即可。');
+    } else {
+      const a = document.createElement('a');
+      a.href = u;
+      a.download = name;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setNotice('本章已导出到下载目录。这本书要长期留在站内，请点「加入书架」。');
+    }
+    setTimeout(() => URL.revokeObjectURL(u), 60_000);
   }
   const original = chapter?.source || prepared?.url || source;
   return <article className="chapter-shell"><header className="chapter-intro"><a href="/shelf">返回书架</a><span>《{title}》第 {chapterNumber} 章</span><h1>{chapter?.chapterTitle || prepared?.title || '准备你的阅读版本'}</h1></header>
@@ -125,7 +136,7 @@ export default function AdaptReader() {
     {error && <div role="alert"><p>{error}</p>{!busy && <button onClick={() => { if (jobId) { localStorage.removeItem(storageKey); autoStarted.current = ''; setJobId(null); setAttempt(x => x+1); } else if (chapter) { void illustrate(chapter).catch(e => setError(String(e))); } else if (prepared) { void generate(); } else setAttempt(x => x+1); }}>重试失败步骤</button>} <a href={`/signin-with-chatgpt?return_to=${encodeURIComponent(`/adapt?title=${title}&source=${source}`)}`} target="_top">登录</a></div>}
     {notice && <p role="status">{notice}</p>}
     {prepared && !chapter && !busy && <section className="adapt-ready"><div><span>原文已就绪</span><h2>{prepared.title}</h2><p>已识别第 {chapterNumber} 章，共 {prepared.text.length.toLocaleString()} 字符。系统正在自动开始改写和配图，无需再操作。</p></div><details><summary>查看提取的第 {chapterNumber} 章原文</summary><pre>{prepared.text}</pre></details></section>}
-    {chapter && <ChapterTemplate chapter={chapter} title={title} sourceUrl={source} chapterNumber={chapterNumber} shelfState={shelfState} answer={answer} chapterFeedback={chapterFeedback} busy={busy} onAddToShelf={addToShelf} onDownload={() => download(JSON.stringify(chapter, null, 2), `${title}-第${chapterNumber}章.json`)} onAnswer={setAnswer} onFeedback={(item) => { setChapterFeedback(item); localStorage.setItem(`reading-feedback:${title}:${source}:${chapterNumber}`, item); }} onIllustrate={() => { setBusy(true); illustrate(chapter).catch(e => setError(String(e))).finally(() => setBusy(false)); }} />}
+    {chapter && <ChapterTemplate chapter={chapter} title={title} sourceUrl={source} chapterNumber={chapterNumber} shelfState={shelfState} answer={answer} chapterFeedback={chapterFeedback} busy={busy} onAddToShelf={addToShelf} onDownload={() => download(chapterMarkdown(chapter), `${title}-第${chapterNumber}章.md`)} onAnswer={setAnswer} onFeedback={(item) => { setChapterFeedback(item); localStorage.setItem(`reading-feedback:${title}:${source}:${chapterNumber}`, item); }} onIllustrate={() => { setBusy(true); illustrate(chapter).catch(e => setError(String(e))).finally(() => setBusy(false)); }} />}
     {original && !original.startsWith('upload:') && original !== 'user-upload' && <a className="chapter-original-link" href={original} target="_blank" rel="noreferrer">核对原文 <ExternalLink size={14} /></a>}
   </article>;
 }

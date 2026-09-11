@@ -2471,11 +2471,11 @@ body {
 .adapt-ready summary { cursor: pointer; font-weight: 650; }
 .adapt-ready pre { max-height: 300px; margin: 16px 0 0; overflow: auto; white-space: pre-wrap; color: #43534c; font: 14px/1.8 var(--display); }
 .adapt-primary,.chapter-actions button,.chapter-next-link { display: inline-flex; width: auto; align-items: center; justify-content: center; gap: 7px; margin-top: 22px; padding: 12px 20px; border: 0; border-radius: 999px; background: #153f35; color: white; font-weight: 650; white-space: nowrap; cursor: pointer; }
-.chapter-actions { position: fixed; top: 16px; right: max(16px, calc((100vw - 1180px) / 2 + 18px)); z-index: 80; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; width: max-content; max-width: calc(100vw - 32px); padding: 8px; border-radius: 999px; background: rgba(250,249,241,.9); box-shadow: 0 12px 30px rgba(21,63,53,.12); backdrop-filter: blur(14px); }
+.chapter-actions { position: fixed; top: 92px; right: max(16px, calc((100vw - 1180px) / 2 + 18px)); z-index: 80; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; width: max-content; max-width: calc(100vw - 32px); padding: 8px; border-radius: 999px; background: rgba(250,249,241,.9); box-shadow: 0 12px 30px rgba(21,63,53,.12); backdrop-filter: blur(14px); }
 .chapter-actions button { margin-top: 0; }
 .chapter-actions button.secondary,.chapter-next-link { margin-top: 0; border: 1px solid rgba(21,63,53,.18); background: rgba(255,255,255,.7); color: #285f50; text-decoration: none; }
 .chapter-actions button:disabled { opacity: .72; cursor: default; }
-@media (max-width: 700px) { .chapter-actions { top: 10px; right: 10px; max-width: calc(100vw - 20px); } .chapter-actions button,.chapter-next-link { padding: 11px 13px; } }
+@media (max-width: 700px) { .chapter-actions { top: 78px; right: 10px; max-width: calc(100vw - 20px); } .chapter-actions button,.chapter-next-link { padding: 11px 13px; } }
 .spin { animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .upload-message > div { flex: 1; }
