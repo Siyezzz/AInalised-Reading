@@ -72,20 +72,20 @@ export default function AiSetup() {
 
   if (saved && !open) {
     return (
-      <div className="ai-setup-toast" role="status">
+      <output className="ai-setup-toast">
         <Check size={16} />
         线路已保存，可以开始阅读了
         <button type="button" aria-label="关闭提示" onClick={() => setSaved(false)}>
           <X size={14} />
         </button>
-      </div>
+      </output>
     );
   }
 
   if (!open) return null;
 
   return (
-    <div className="ai-setup-backdrop" role="dialog" aria-modal="true" aria-labelledby="ai-setup-title">
+    <dialog open className="ai-setup-backdrop" aria-labelledby="ai-setup-title">
       <section className="ai-setup-panel">
         <header>
           <span className="ai-setup-icon">
@@ -175,6 +175,6 @@ export default function AiSetup() {
           </button>
         </footer>
       </section>
-    </div>
+    </dialog>
   );
 }

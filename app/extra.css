@@ -17,8 +17,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  margin: 0;
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  overflow: hidden;
   padding: 20px;
+  border: 0;
   background: rgba(21, 45, 38, 0.42);
+  color: inherit;
   backdrop-filter: blur(6px);
 }
 .ai-setup-panel {
