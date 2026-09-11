@@ -5,8 +5,9 @@ export const IMAGE_MODEL = '@cf/black-forest-labs/flux-1-schnell';
 export const AGNES_TEXT_MODEL = 'agnes-2.5-flash';
 export const AGNES_IMAGE_MODEL = 'agnes-image-2.1-flash';
 export const GROQ_TEXT_MODEL = 'qwen/qwen3.8-27b';
+export const IMAGE_STYLE_PROMPT = 'Elegant Chinese classic picture-book illustration, warm ink wash and mineral pigment colors, delicate linework, cinematic composition, clear characters, clear action, expressive faces, rich but clean background, no text, no watermark.';
 export type UserAiConfig = { provider?: string; apiKey?: string; baseUrl?: string; model?: string };
-export type JobParams = { title: string; sourceText: string; sourceUrl: string; profile: unknown; aiConfig?: UserAiConfig };
+export type JobParams = { title: string; chapterNumber?: number; sourceText: string; sourceUrl: string; profile: unknown; aiConfig?: UserAiConfig };
 export interface JobEnv { EDITOR_SECRET: string; ADAPT_MODEL_PROVIDER?: string; AGNES_API_KEY?: string; AGNES_MODEL?: string; GROQ_API_KEY?: string; GROQ_MODEL?: string; AI: Ai; READING: Workflow<JobParams> }
 export const ADAPTATION_SKILL = [
   '你是严谨的中文文学改写编辑，按固定流程处理名著章节。',
@@ -183,6 +184,7 @@ function parseJsonFromText(text: string): Record<string, unknown> {
 }
 const traditionalToSimplified: Record<string, string> = {
   萬: '万', 與: '与', 丟: '丢', 並: '并', 乾: '干', 亂: '乱', 亞: '亚', 產: '产', 眾: '众', 優: '优',
+  個: '个', 這: '这', 於: '于', 裡: '里', 裏: '里', 纔: '才', 著: '着', 罷: '罢',
   會: '会', 傳: '传', 傷: '伤', 價: '价', 儀: '仪', 億: '亿', 兒: '儿', 內: '内', 兩: '两', 冊: '册',
   冪: '幂', 凈: '净', 凱: '凯', 別: '别', 則: '则', 剛: '刚', 創: '创', 劇: '剧', 劉: '刘', 劍: '剑',
   勁: '劲', 動: '动', 務: '务', 勝: '胜', 勞: '劳', 勢: '势', 區: '区', 協: '协', 卻: '却', 厭: '厌',
@@ -278,12 +280,12 @@ function fallbackJourneyChapter(title: string, sourceUrl: string, sourceText: st
       parts: 0,
     };
   }
-  const paragraphs = sourceText.replace(/\s+/g, ' ').match(/.{1,260}(?:。|！|？|；|$)/g)?.slice(0, 8).map(x => x.trim()).filter(Boolean) || [];
+  const paragraphs = sourceText.replace(/\s+/g, ' ').match(/.{1,260}(?:。|！|？|；|$)/g)?.slice(0, 8).map(x => toSimplifiedText(x.trim())).filter(Boolean) || [];
   return {
     chapterTitle: `${title} 第一章`,
-    chapter: paragraphs.length >= 4 ? paragraphs : ['这一章的原文已经找到，但在线 AI 额度暂时不可用。', '系统先保留原文线索，等额度恢复后会重新生成完整改写。', '当前版本不会把失败交给读者处理。', '请稍后刷新同一页面，缓存会在生成成功后显示正式章节。'],
+    chapter: ['这一章的原文已经找到，但在线 AI 暂时没有稳定返回合格改写。', '为了避免把原文直接冒充成改写，系统没有展示未通过检查的内容。', '请稍后刷新或换用个人 API key 重新生成，成功后会按固定模板显示完整章节。', '当前页面仍保留来源、插图和小考察结构，但正式阅读内容必须等合格改写生成后保存。'],
     quiz: { question: '这一章当前最可靠的信息是什么？', options: ['已经找到可核验原文', '没有任何来源', '人物关系已经全部改写完', '图片来自原书扫描'], correctIndex: 0, rightFeedback: '对，原文来源已经解析成功。', wrongFeedback: ['对。', '来源已经解析成功。', 'AI 额度恢复前不能这样断定。', '当前图片是系统占位插图。'] },
-    imageCue: { prompt: `Classic literature illustration for ${title}, no text`, afterParagraph: Math.max(1, Math.min(3, paragraphs.length || 2)) },
+    imageCue: { prompt: `${IMAGE_STYLE_PROMPT} Scene: ${title}`, afterParagraph: Math.max(1, Math.min(3, paragraphs.length || 2)) },
     image: fallbackSvg(title),
     source: sourceUrl,
     model: 'built-in-source-fallback',
@@ -347,11 +349,11 @@ function fallbackMetadata(title: string, summaries: string[], sourceText: string
       rightFeedback: '对。判断这一章要先看人物行动怎样推动下一步事件。',
       wrongFeedback: ['对。这个选项抓住了事件链。', '改写仍然依据原文，不是脱离原作。', '人物行动和目标正是这一章的关键。', '景物描写服务于事件，不是全部内容。'],
     },
-    imageCue: { prompt: `Chinese classic literature illustration for ${title}: ${eventText.slice(0, 180)}, no text`, afterParagraph: 2 },
+    imageCue: { prompt: `${IMAGE_STYLE_PROMPT} Scene: ${title}: ${eventText.slice(0, 180)}`, afterParagraph: 2 },
   };
 }
 async function createIllustration(env: JobEnv, title: string, aiConfig: UserAiConfig | undefined, prompt: string) {
-  const safePrompt = prompt.slice(0, 2000);
+  const safePrompt = `${IMAGE_STYLE_PROMPT}\nScene: ${prompt}`.slice(0, 2000);
   const drawAgnes = async () => {
     if (!env.AGNES_API_KEY) throw new Error('AGNES_KEY_MISSING');
     const r = await fetch('https://apihub.agnes-ai.com/v1/images/generations', { method: 'POST', headers: { authorization: `Bearer ${env.AGNES_API_KEY}`, 'content-type': 'application/json' }, body: JSON.stringify({ model: AGNES_IMAGE_MODEL, prompt: safePrompt, n: 1, size: '1024x768' }), signal: AbortSignal.timeout(30_000) });
@@ -380,6 +382,22 @@ async function createIllustration(env: JobEnv, title: string, aiConfig: UserAiCo
     return { image: fallbackSvg(title), imageModel: 'built-in-svg-fallback' };
   }
 }
+async function rewriteWholeChapter(env: JobEnv, p: JobParams, timeoutMs: number, models: Set<string>) {
+  const result = await completeJsonResult(env, [
+        '任务：把这整章原文一次性改写成适合读者的完整章节。',
+        '输入字段：title 是书名；chapterNumber 是章节序号；profile 是读者偏好；source 是本章原文。',
+        '固定模板：chapterTitle 用简体；chapter 放 8-16 个现代简体中文自然段，每段 90-190 字；originalEvidence 只放折叠证据；quiz 放章末小考察；imageCue 放插图位置。',
+        '改写要求：必须从本章开端写到结尾，保留事件链、人物行动、因果和结尾状态。正文要像给真实读者写的章节，不能直接搬运原文句式。',
+        '插图要求：imageCue.prompt 只能描述一个具体关键场景，并使用 elegant Chinese classic picture-book illustration, warm ink wash and mineral pigment colors, delicate linework, clear characters, clear action, no text。',
+        '输出 schema：{"chapterTitle":"标题","chapter":["改写后的简体中文自然段"],"originalEvidence":[{"adapted":"改写中的关键句","original":"不超过30字或20个英文词的原文证据","note":"比较说明"}],"quiz":{"question":"推理题","options":["A","B","C","D"],"correctIndex":0,"rightFeedback":"解析","wrongFeedback":["A解析","B解析","C解析","D解析"]},"imageCue":{"prompt":"English description of one accurate illustrated scene, elegant Chinese classic picture-book illustration, warm ink wash and mineral pigment colors, clear characters and action, no text","afterParagraph":3}}',
+      ].join('\n'), { title: p.title, chapterNumber: p.chapterNumber || 1, profile: p.profile, source: p.sourceText }, p.aiConfig, fetch, timeoutMs);
+  const x = result.json;
+  if (typeof x.chapterTitle !== 'string') throw new Error('INVALID_TITLE');
+  const content = simplifyValue({ chapterTitle: x.chapterTitle, chapter: validateParagraphs(x.chapter), originalEvidence: normalizeEvidence(x.originalEvidence), quiz: validateQuiz(x.quiz), imageCue: validateImageCue(x.imageCue) });
+  if (looksCopiedFromSource(content.chapter, p.sourceText)) throw new Error('OUTPUT_TOO_CLOSE_TO_SOURCE');
+  models.add(result.model);
+  return content;
+}
 export class ReadingWorkflow extends WorkflowEntrypoint<JobEnv, JobParams> {
   async run(event: WorkflowEvent<JobParams>, step: WorkflowStep) {
     return generateAdaptedChapter(this.env, event.payload);
@@ -388,18 +406,7 @@ export class ReadingWorkflow extends WorkflowEntrypoint<JobEnv, JobParams> {
 export async function generateAdaptedChapter(env: JobEnv, p: JobParams) {
   const models = new Set<string>();
   try {
-    const result = await completeJsonResult(env, [
-          '任务：把这整章原文一次性改写成适合读者的完整章节。',
-          '输入字段：title 是书名；profile 是读者偏好；source 是本章原文。',
-          '固定模板：chapterTitle 用简体；chapter 放 8-16 个现代简体中文自然段，每段 90-190 字；originalEvidence 只放折叠证据；quiz 放章末小考察；imageCue 放插图位置。',
-          '改写要求：必须从本章开端写到结尾，保留事件链、人物行动、因果和结尾状态。正文要像给真实读者写的章节，不能直接搬运原文句式。',
-          '输出 schema：{"chapterTitle":"标题","chapter":["改写后的简体中文自然段"],"originalEvidence":[{"adapted":"改写中的关键句","original":"不超过30字或20个英文词的原文证据","note":"比较说明"}],"quiz":{"question":"推理题","options":["A","B","C","D"],"correctIndex":0,"rightFeedback":"解析","wrongFeedback":["A解析","B解析","C解析","D解析"]},"imageCue":{"prompt":"English description of one accurate illustrated scene with characters and action, no text","afterParagraph":3}}',
-        ].join('\n'), { title: p.title, profile: p.profile, source: p.sourceText }, p.aiConfig, fetch, 10_000);
-    const x = result.json;
-    if (typeof x.chapterTitle !== 'string') throw new Error('INVALID_TITLE');
-    const fast = simplifyValue({ chapterTitle: x.chapterTitle, chapter: validateParagraphs(x.chapter), originalEvidence: normalizeEvidence(x.originalEvidence), quiz: validateQuiz(x.quiz), imageCue: validateImageCue(x.imageCue) });
-    if (looksCopiedFromSource(fast.chapter, p.sourceText)) throw new Error('OUTPUT_TOO_CLOSE_TO_SOURCE');
-    models.add(result.model);
+    const fast = await rewriteWholeChapter(env, p, 12_000, models);
     const illustration = await createIllustration(env, p.title, p.aiConfig, fast.imageCue.prompt);
     return { ...fast, image: illustration.image, source: p.sourceUrl, model: [...models].join(', '), imageModel: illustration.imageModel, parts: 1 };
   } catch (fastError) {
@@ -425,14 +432,25 @@ export async function generateAdaptedChapter(env: JobEnv, p: JobParams) {
       summaries.push(part.summary);
       models.add(part.model);
     });
-  } catch (error) { console.error(JSON.stringify({ event: 'workflow_text_fallback', error: error instanceof Error ? error.message : String(error) })); return fallbackJourneyChapter(p.title, p.sourceUrl, p.sourceText); }
+  } catch (error) {
+    console.error(JSON.stringify({ event: 'workflow_text_split_failed', error: error instanceof Error ? error.message : String(error) }));
+    try {
+      const retry = await rewriteWholeChapter(env, p, 70_000, models);
+      const illustration = await createIllustration(env, p.title, p.aiConfig, retry.imageCue.prompt);
+      return { ...retry, image: illustration.image, source: p.sourceUrl, model: [...models].join(', '), imageModel: illustration.imageModel, parts: 1 };
+    } catch (retryError) {
+      console.error(JSON.stringify({ event: 'workflow_text_fallback', error: retryError instanceof Error ? retryError.message : String(retryError) }));
+      return fallbackJourneyChapter(p.title, p.sourceUrl, p.sourceText);
+    }
+  }
   let metadata;
   try {
     const result = await completeJsonResult(env, [
       '任务：根据已经改写完成的章节事实，生成标题、阅读理解题和插图提示。',
       '输入字段：title 是书名；profile 是读者偏好；events 是各段事实摘要。',
       '题目要求：一个最佳答案和三个有迷惑性的错误答案，错误答案必须可解释。',
-      '输出 schema：{"chapterTitle":"标题","quiz":{"question":"推理题","options":["A","B","C","D"],"correctIndex":0,"rightFeedback":"解析","wrongFeedback":["A解析","B解析","C解析","D解析"]},"imageCue":{"prompt":"English description of one accurate illustrated scene with characters and action, no text","afterParagraph":3}}',
+      '插图要求：imageCue.prompt 只能描述一个具体关键场景，并使用 elegant Chinese classic picture-book illustration, warm ink wash and mineral pigment colors, delicate linework, clear characters, clear action, no text。',
+      '输出 schema：{"chapterTitle":"标题","quiz":{"question":"推理题","options":["A","B","C","D"],"correctIndex":0,"rightFeedback":"解析","wrongFeedback":["A解析","B解析","C解析","D解析"]},"imageCue":{"prompt":"English description of one accurate illustrated scene, elegant Chinese classic picture-book illustration, warm ink wash and mineral pigment colors, clear characters and action, no text","afterParagraph":3}}',
     ].join('\n'), { title: p.title, profile: p.profile, events: summaries }, p.aiConfig, fetch, 10_000);
     const x = result.json; models.add(result.model);
     if (typeof x.chapterTitle !== 'string') throw new Error('INVALID_METADATA');

@@ -2470,11 +2470,12 @@ body {
 .adapt-ready details { margin-top: 24px; padding: 15px 18px; border-radius: 13px; background: #edf3ef; color: #285f50; }
 .adapt-ready summary { cursor: pointer; font-weight: 650; }
 .adapt-ready pre { max-height: 300px; margin: 16px 0 0; overflow: auto; white-space: pre-wrap; color: #43534c; font: 14px/1.8 var(--display); }
-.adapt-primary,.chapter-actions button { display: inline-flex; width: auto; align-items: center; justify-content: center; gap: 7px; margin-top: 22px; padding: 12px 20px; border: 0; border-radius: 999px; background: #153f35; color: white; font-weight: 650; white-space: nowrap; cursor: pointer; }
-.chapter-actions { position: sticky; top: 14px; z-index: 30; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; width: max-content; max-width: 100%; margin: 26px 0 0 auto; padding: 8px; border-radius: 999px; background: rgba(250,249,241,.86); box-shadow: 0 12px 30px rgba(21,63,53,.10); backdrop-filter: blur(14px); }
+.adapt-primary,.chapter-actions button,.chapter-next-link { display: inline-flex; width: auto; align-items: center; justify-content: center; gap: 7px; margin-top: 22px; padding: 12px 20px; border: 0; border-radius: 999px; background: #153f35; color: white; font-weight: 650; white-space: nowrap; cursor: pointer; }
+.chapter-actions { position: fixed; top: 16px; right: max(16px, calc((100vw - 1180px) / 2 + 18px)); z-index: 80; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; width: max-content; max-width: calc(100vw - 32px); padding: 8px; border-radius: 999px; background: rgba(250,249,241,.9); box-shadow: 0 12px 30px rgba(21,63,53,.12); backdrop-filter: blur(14px); }
 .chapter-actions button { margin-top: 0; }
-.chapter-actions button.secondary { border: 1px solid rgba(21,63,53,.18); background: rgba(255,255,255,.7); color: #285f50; }
+.chapter-actions button.secondary,.chapter-next-link { margin-top: 0; border: 1px solid rgba(21,63,53,.18); background: rgba(255,255,255,.7); color: #285f50; text-decoration: none; }
 .chapter-actions button:disabled { opacity: .72; cursor: default; }
+@media (max-width: 700px) { .chapter-actions { top: 10px; right: 10px; max-width: calc(100vw - 20px); } .chapter-actions button,.chapter-next-link { padding: 11px 13px; } }
 .spin { animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .upload-message > div { flex: 1; }

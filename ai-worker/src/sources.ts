@@ -1,4 +1,4 @@
-import { firstChapter } from '../../app/lib/chapter-text';
+import { chaptersFromText } from '../../app/lib/chapter-text';
 
 export const CLASSICS: Record<string, string> = {
   // 四大名著
@@ -115,15 +115,25 @@ async function wiki(page: string, lang: 'zh' | 'en' = 'zh') {
   return { text: cleanWiki(data.parse.wikitext), links: (data.parse.links || []).filter(x => x.ns === 0).map(x => x.title || x['*']) };
 }
 
-export async function readWiki(page: string, lang: 'zh' | 'en' = 'zh') {
+function chapterAt(text: string, chapterNumber = 1) {
+  const chapters = chaptersFromText(text);
+  const index = Math.max(0, chapterNumber - 1);
+  const chapter = chapters[index] || chapters[0];
+  if (!chapter || chapter.text.replace(/\s/g, '').length < 150) throw new Error('没有识别到章节正文');
+  if (chapter.text.length > 120_000) throw new Error('未能可靠分出章节，请提供单章文件或带目录的 EPUB');
+  return chapter;
+}
+
+export async function readWiki(page: string, lang: 'zh' | 'en' = 'zh', chapterNumber = 1) {
   const root = await wiki(page, lang);
   const isChapter = /\/.*第.+[回章]|\/.*Chapter\s+\d+/i.test(page);
   if (!isChapter) {
     const candidates = root.links.filter(x => {
-      if (lang === 'zh') return x.startsWith(`${page}/`) && /第[零〇0]*[一壹1][回章]|第0*1[回章]/.test(x);
-      return x.startsWith(`${page}/`) && /chapter\s*(i|1|one)\b/i.test(x);
+      if (lang === 'zh') return x.startsWith(`${page}/`) && /第[〇零一二三四五六七八九十百千万两壹贰叁肆伍陆柒捌玖拾\d]+[回章]/.test(x);
+      return x.startsWith(`${page}/`) && /chapter\s*(?:[ivxlcdm]+|\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(x);
     });
-    for (const candidate of candidates.slice(0, 3)) {
+    const selected = candidates[Math.max(0, chapterNumber - 1)] ? [candidates[Math.max(0, chapterNumber - 1)], ...candidates.slice(0, 3)] : candidates.slice(0, 3);
+    for (const candidate of selected) {
       try {
         const chapter = await wiki(candidate, lang);
         if (chapter.text.length >= 150) return { title: candidate.split('/').at(-1)!, text: chapter.text, url: `https://${lang}.wikisource.org/wiki/${encodeURIComponent(candidate)}` };
@@ -131,14 +141,14 @@ export async function readWiki(page: string, lang: 'zh' | 'en' = 'zh') {
     }
   }
   if (root.text.length < 150) throw new Error('SOURCE_TEXT_MISSING');
-  const chapter = firstChapter(root.text);
+  const chapter = chapterAt(root.text, chapterNumber);
   return { ...chapter, url: `https://${lang}.wikisource.org/wiki/${encodeURIComponent(page)}` };
 }
 
-async function gutenberg(id: string) {
+async function gutenberg(id: string, chapterNumber = 1) {
   let last: unknown;
   for (const url of [`https://www.gutenberg.org/ebooks/${id}.txt.utf-8`, `https://www.gutenberg.org/cache/epub/${id}/pg${id}.txt`]) {
-    try { const text = await (await get(url)).text(); return { ...firstChapter(text), url: `https://www.gutenberg.org/ebooks/${id}` }; } catch (error) { last = error; }
+    try { const text = await (await get(url)).text(); return { ...chapterAt(text, chapterNumber), url: `https://www.gutenberg.org/ebooks/${id}` }; } catch (error) { last = error; }
   }
   throw last;
 }
@@ -231,27 +241,27 @@ export async function searchSources(query: string) {
   }).slice(0, 12);
 }
 
-export async function resolveSource(title: string, sourceUrl?: string) {
+export async function resolveSource(title: string, sourceUrl?: string, chapterNumber = 1) {
   if (sourceUrl && !sourceUrl.startsWith('upload:')) {
     const source = new URL(sourceUrl);
     if (source.protocol !== 'https:') throw new Error('SOURCE_NOT_SUPPORTED');
 
     if (source.hostname === 'zh.wikisource.org' && source.pathname.startsWith('/wiki/')) {
-      return readWiki(decodeURIComponent(source.pathname.slice(6)), 'zh');
+      return readWiki(decodeURIComponent(source.pathname.slice(6)), 'zh', chapterNumber);
     }
     if (source.hostname === 'en.wikisource.org' && source.pathname.startsWith('/wiki/')) {
-      return readWiki(decodeURIComponent(source.pathname.slice(6)), 'en');
+      return readWiki(decodeURIComponent(source.pathname.slice(6)), 'en', chapterNumber);
     }
     const id = source.hostname === 'www.gutenberg.org' ? /\/(?:ebooks|epub)\/(\d+)/.exec(source.pathname)?.[1] : null;
-    if (id) return gutenberg(id);
+    if (id) return gutenberg(id, chapterNumber);
   }
 
-  if (CLASSICS[title]) return readWiki(CLASSICS[title], 'zh');
-  if (ENGLISH_CLASSICS[title]) return gutenberg(ENGLISH_CLASSICS[title]);
+  if (CLASSICS[title]) return readWiki(CLASSICS[title], 'zh', chapterNumber);
+  if (ENGLISH_CLASSICS[title]) return gutenberg(ENGLISH_CLASSICS[title], chapterNumber);
 
   const results = await searchSources(title);
   const normalize = (x: string) => x.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
   const result = results.find(x => normalize(x.title) === normalize(title));
   if (!result) throw new Error('SOURCE_NOT_FOUND');
-  return resolveSource(result.title, result.sourceUrl);
+  return resolveSource(result.title, result.sourceUrl, chapterNumber);
 }
