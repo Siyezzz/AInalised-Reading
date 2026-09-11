@@ -14,11 +14,11 @@ export default function ProfileClient({ email }: { email: string }) {
     [saved, setSaved] = useState(false),
     [bookStatus, setBookStatus] = useState<'idle' | 'saving' | 'error'>('idle'),
     [bookError, setBookError] = useState(''),
-    [aiProvider, setAiProvider] = useState('system-agnes'),
-    [apiPreset, setApiPreset] = useState('openai'),
-    [apiBaseUrl, setApiBaseUrl] = useState('https://api.openai.com/v1'),
-    [apiModel, setApiModel] = useState('gpt-4.1-mini'),
+    [apiPreset, setApiPreset] = useState('groq'),
+    [apiBaseUrl, setApiBaseUrl] = useState('https://api.groq.com/openai/v1'),
+    [apiModel, setApiModel] = useState('qwen/qwen3.8-27b'),
     [apiKey, setApiKey] = useState(''),
+    [imageModel, setImageModel] = useState(''),
     [modelSaved, setModelSaved] = useState(false);
   const keyApply = apiPresets.find((item) => item.id === apiPreset);
   useEffect(() => {
@@ -34,11 +34,12 @@ export default function ProfileClient({ email }: { email: string }) {
   }, []);
   useEffect(() => {
     try {
-      const raw = JSON.parse(localStorage.getItem('zhiji-ai-settings') || '{}') as { aiProvider?: string; apiBaseUrl?: string; apiModel?: string; apiKey?: string };
-      if (raw.aiProvider) setAiProvider(raw.aiProvider);
+      const raw = JSON.parse(localStorage.getItem('zhiji-ai-settings') || '{}') as { apiBaseUrl?: string; apiModel?: string; apiKey?: string; imageModel?: string };
+      // 站点已不再提供共用线路，旧配置里的 system-agnes / cloudflare-free 一律归到自有 key。
       if (raw.apiBaseUrl) setApiBaseUrl(raw.apiBaseUrl);
       if (raw.apiModel) setApiModel(raw.apiModel);
       if (raw.apiKey) setApiKey(raw.apiKey);
+      if (raw.imageModel) setImageModel(raw.imageModel);
       const matched = apiPresets.find((item) => item.baseUrl && item.baseUrl === raw.apiBaseUrl);
       if (matched) setApiPreset(matched.id);
       else if (raw.apiBaseUrl) setApiPreset('custom');
@@ -56,9 +57,13 @@ export default function ProfileClient({ email }: { email: string }) {
     if (response.ok) setSaved(true);
   }
   function saveModelSettings() {
-    const value = aiProvider === 'openai-compatible'
-      ? { aiProvider, apiBaseUrl: apiBaseUrl.trim(), apiModel: apiModel.trim(), apiKey: apiKey.trim() }
-      : { aiProvider };
+    const value: Record<string, string> = {
+      aiProvider: 'openai-compatible',
+      apiBaseUrl: apiBaseUrl.trim(),
+      apiModel: apiModel.trim(),
+      apiKey: apiKey.trim(),
+    };
+    if (imageModel.trim()) value.imageModel = imageModel.trim();
     localStorage.setItem('zhiji-ai-settings', JSON.stringify(value));
     setModelSaved(true);
   }
@@ -161,45 +166,38 @@ export default function ProfileClient({ email }: { email: string }) {
           </fieldset>
           <fieldset className="model-settings">
             <legend>改写模型</legend>
+            <p className="model-settings-note">
+              站点不提供共用的 AI 额度，改写章节用的是你自己的 key。key 只存在这台浏览器里，不会上传到站点数据库。
+            </p>
             <label>
-              连接方式
-              <select value={aiProvider} onChange={(event) => { setAiProvider(event.target.value); setModelSaved(false); }}>
-                <option value="system-agnes">默认线路 Groq / Agnes</option>
-                <option value="cloudflare-free">Cloudflare 免费模型</option>
-                <option value="openai-compatible">我的 API key</option>
+              API 服务
+              <select value={apiPreset} onChange={(event) => choosePreset(event.target.value)}>
+                {apiPresets.map((preset) => (
+                  <option value={preset.id} key={preset.id}>{preset.name} - {preset.note}</option>
+                ))}
               </select>
             </label>
-            {aiProvider === 'openai-compatible' ? (
-              <>
-                <label>
-                  API 服务
-                  <select value={apiPreset} onChange={(event) => choosePreset(event.target.value)}>
-                    {apiPresets.map((preset) => (
-                      <option value={preset.id} key={preset.id}>{preset.name} - {preset.note}</option>
-                    ))}
-                  </select>
-                </label>
-                {keyApply?.keyUrl && (
-                  <p className="api-key-apply">
-                    没有 key？<a href={keyApply.keyUrl} target="_blank" rel="noreferrer">去 {keyApply.name} 免费申请</a>
-                  </p>
-                )}
-                <label>
-                  Base URL
-                  <input value={apiBaseUrl} onChange={(event) => { setApiBaseUrl(event.target.value); setModelSaved(false); }} placeholder="https://api.openai.com/v1" />
-                </label>
-                <label>
-                  Model
-                  <input value={apiModel} onChange={(event) => { setApiModel(event.target.value); setModelSaved(false); }} placeholder="gpt-4o-mini / gpt-4.1-mini / provider model id" />
-                </label>
-                <label>
-                  API key
-                  <input type="password" value={apiKey} onChange={(event) => { setApiKey(event.target.value); setModelSaved(false); }} placeholder="sk-..." autoComplete="off" />
-                </label>
-              </>
-            ) : (
-              <p>{aiProvider === 'cloudflare-free' ? '优先尝试 Cloudflare Workers AI；额度不可用时回退到站点备用线路。' : '不需要填写 key；优先使用站点 Groq，失败时依次回退到 Agnes 和 Cloudflare。'}</p>
+            {keyApply?.keyUrl && (
+              <p className="api-key-apply">
+                没有 key？<a href={keyApply.keyUrl} target="_blank" rel="noreferrer">去 {keyApply.name} 免费申请</a>
+              </p>
             )}
+            <label>
+              Base URL
+              <input value={apiBaseUrl} onChange={(event) => { setApiBaseUrl(event.target.value); setModelSaved(false); }} placeholder="https://api.groq.com/openai/v1" />
+            </label>
+            <label>
+              Model
+              <input value={apiModel} onChange={(event) => { setApiModel(event.target.value); setModelSaved(false); }} placeholder="provider model id" />
+            </label>
+            <label>
+              API key
+              <input type="password" value={apiKey} onChange={(event) => { setApiKey(event.target.value); setModelSaved(false); }} placeholder="sk-..." autoComplete="off" />
+            </label>
+            <label>
+              插图模型（可选）
+              <input value={imageModel} onChange={(event) => { setImageModel(event.target.value); setModelSaved(false); }} placeholder="留空则用内置插图，例如 gpt-image-1" />
+            </label>
             <button type="button" className="save-model" onClick={saveModelSettings}>
               {modelSaved ? '模型已保存' : '保存模型设置'}
             </button>

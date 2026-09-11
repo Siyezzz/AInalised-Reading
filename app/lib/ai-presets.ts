@@ -32,6 +32,7 @@ export type AiSettings = {
   apiBaseUrl?: string;
   apiModel?: string;
   apiKey?: string;
+  imageModel?: string;
 };
 
 export function readAiSettings(): AiSettings {

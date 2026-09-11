@@ -132,9 +132,8 @@ export default function ShelfClient({
           </a>
           <a
             className="account-pill"
-            href="/signout-with-chatgpt?return_to=/"
-            target="_top"
-            title="退出登录"
+            href="/signin"
+            title="账号与退出登录"
           >
             <span>{displayName.slice(0, 1).toUpperCase()}</span>
             <b>{email}</b>

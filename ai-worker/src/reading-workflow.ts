@@ -1,14 +1,9 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers';
 import { splitForRewrite } from '../../app/lib/chapter-text';
-export const TEXT_MODEL = '@cf/zai-org/glm-4.7-flash';
-export const IMAGE_MODEL = '@cf/black-forest-labs/flux-1-schnell';
-export const AGNES_TEXT_MODEL = 'agnes-2.5-flash';
-export const AGNES_IMAGE_MODEL = 'agnes-image-2.1-flash';
-export const GROQ_TEXT_MODEL = 'qwen/qwen3.8-27b';
 export const IMAGE_STYLE_PROMPT = 'Elegant Chinese classic picture-book illustration, warm ink wash and mineral pigment colors, delicate linework, cinematic composition, clear characters, clear action, expressive faces, rich but clean background, no text, no watermark.';
-export type UserAiConfig = { provider?: string; apiKey?: string; baseUrl?: string; model?: string };
+export type UserAiConfig = { provider?: string; apiKey?: string; baseUrl?: string; model?: string; imageModel?: string };
 export type JobParams = { title: string; chapterNumber?: number; sourceText: string; sourceUrl: string; profile: unknown; aiConfig?: UserAiConfig };
-export interface JobEnv { EDITOR_SECRET: string; ADAPT_MODEL_PROVIDER?: string; AGNES_API_KEY?: string; AGNES_MODEL?: string; GROQ_API_KEY?: string; GROQ_MODEL?: string; AI: Ai; READING: Workflow<JobParams> }
+export interface JobEnv { EDITOR_SECRET: string; READING: Workflow<JobParams> }
 export const ADAPTATION_SKILL = [
   '你是严谨的中文文学改写编辑，按固定流程处理名著章节。',
   '先在内部列出本章事件链，再连续改写，不摘要，不跳读，不把原文入口当作补剧情。',
@@ -23,115 +18,28 @@ export const ADAPTATION_SKILL = [
 const JSON_OUTPUT_RULE = 'Return only one valid json object. The response content-type is application/json in spirit: no Markdown fences, no prose before or after the json.';
 const clean = (x: string) => x.replace(/^```(?:json)?\s*|\s*```$/g, '');
 type CompletionResult = { json: Record<string, unknown>; model: string };
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
-  const timeout = new Promise<T>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(label)), timeoutMs);
-  });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
-}
 export function normalizeUserAiConfig(input: unknown): UserAiConfig | undefined {
   if (!input || typeof input !== 'object') return undefined;
-  const raw = input as { provider?: unknown; apiKey?: unknown; baseUrl?: unknown; model?: unknown };
+  const raw = input as { provider?: unknown; apiKey?: unknown; baseUrl?: unknown; model?: unknown; imageModel?: unknown };
   const provider = typeof raw.provider === 'string' ? raw.provider.trim() : '';
   const apiKey = typeof raw.apiKey === 'string' ? raw.apiKey.trim() : '';
   const baseUrl = typeof raw.baseUrl === 'string' ? raw.baseUrl.trim().replace(/\/+$/, '') : '';
   const model = typeof raw.model === 'string' ? raw.model.trim() : '';
-  if (provider === 'openai-compatible') {
-    if (!apiKey || !baseUrl || !model) return undefined;
-    try {
-      const url = new URL(baseUrl);
-      if (url.protocol !== 'https:' || apiKey.length > 300 || model.length > 120 || baseUrl.length > 220) return undefined;
-      return { provider, apiKey, baseUrl, model };
-    } catch { return undefined; }
-  }
-  if (provider === 'cloudflare-free') return { provider };
-  return undefined;
+  const imageModel = typeof raw.imageModel === 'string' ? raw.imageModel.trim() : '';
+  if (provider !== 'openai-compatible') return undefined;
+  if (!apiKey || !baseUrl || !model) return undefined;
+  if (apiKey.length > 300 || model.length > 120 || baseUrl.length > 220) return undefined;
+  try {
+    if (new URL(baseUrl).protocol !== 'https:') return undefined;
+  } catch { return undefined; }
+  return { provider, apiKey, baseUrl, model, imageModel: imageModel || undefined };
 }
 export async function completeJsonResult(env: JobEnv, system: string, input: unknown, aiConfig?: UserAiConfig, fetcher: typeof fetch = fetch, timeoutMs = 90_000): Promise<CompletionResult> {
+  void env;
   const instruction = `${ADAPTATION_SKILL}\n${JSON_OUTPUT_RULE}\n${system}`;
   const parse = (text: string, model: string) => ({ json: parseJsonFromText(text), model });
-  if (aiConfig?.provider === 'openai-compatible') {
-    const model = aiConfig.model || 'openai-compatible';
-    return parse(await completeOpenAICompatibleJson(aiConfig, instruction, input, fetcher, timeoutMs), model);
-  }
-  if (aiConfig?.provider === 'cloudflare-free') {
-    try {
-      return parse(await completeCloudflareJson(env, instruction, input, timeoutMs), TEXT_MODEL);
-    } catch (cloudflareError) {
-      if (!env.AGNES_API_KEY) throw cloudflareError;
-      console.error(JSON.stringify({ event: 'workflow_cloudflare_text_fallback', error: cloudflareError instanceof Error ? cloudflareError.message : String(cloudflareError) }));
-      return parse(await completeAgnesJson(env, instruction, input, fetcher, timeoutMs), env.AGNES_MODEL || AGNES_TEXT_MODEL);
-    }
-  }
-  if (env.GROQ_API_KEY && env.ADAPT_MODEL_PROVIDER !== 'agnes' && env.ADAPT_MODEL_PROVIDER !== 'cloudflare') {
-    try {
-      return parse(await completeGroqJson(env, instruction, input, fetcher, timeoutMs), env.GROQ_MODEL || GROQ_TEXT_MODEL);
-    } catch (groqError) {
-      console.error(JSON.stringify({ event: 'workflow_groq_text_fallback', error: groqError instanceof Error ? groqError.message : String(groqError) }));
-    }
-  }
-  if (env.AGNES_API_KEY && env.ADAPT_MODEL_PROVIDER !== 'cloudflare') {
-    try {
-      return parse(await completeAgnesJson(env, instruction, input, fetcher, timeoutMs), env.AGNES_MODEL || AGNES_TEXT_MODEL);
-    } catch (agnesError) {
-      console.error(JSON.stringify({ event: 'workflow_agnes_text_fallback', error: agnesError instanceof Error ? agnesError.message : String(agnesError) }));
-    }
-  }
-  try {
-    return parse(await completeCloudflareJson(env, instruction, input, timeoutMs), TEXT_MODEL);
-  } catch (cloudflareError) {
-    if (!env.AGNES_API_KEY) throw cloudflareError;
-    console.error(JSON.stringify({ event: 'workflow_cloudflare_text_fallback', error: cloudflareError instanceof Error ? cloudflareError.message : String(cloudflareError) }));
-    return parse(await completeAgnesJson(env, instruction, input, fetcher, timeoutMs), env.AGNES_MODEL || AGNES_TEXT_MODEL);
-  }
-}
-async function completeGroqJson(env: JobEnv, instruction: string, input: unknown, fetcher: typeof fetch = fetch, timeoutMs = 75_000) {
-  if (!env.GROQ_API_KEY) throw new Error('GROQ_KEY_MISSING');
-  const model = env.GROQ_MODEL || GROQ_TEXT_MODEL;
-  const body = {
-    model,
-    messages: [{ role: 'system', content: instruction }, { role: 'user', content: JSON.stringify(input) }],
-    temperature: 0.35,
-    max_tokens: 8000,
-    response_format: { type: 'json_object' },
-  };
-  const request = (payload: Record<string, unknown>) => fetcher('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { authorization: `Bearer ${env.GROQ_API_KEY}`, 'content-type': 'application/json' },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  let r = await request(body);
-  if (r.status === 400 || r.status === 422) {
-    const plainBody = { ...body } as Record<string, unknown>;
-    delete plainBody.response_format;
-    r = await request(plainBody);
-  }
-  if (!r.ok) throw new Error(r.status === 429 ? 'GROQ_QUOTA' : `GROQ_HTTP_${r.status}`);
-  const rawResponse = await r.json() as { choices?: { message?: { content?: string }; text?: string }[]; response?: string; text?: string; content?: string };
-  const text = extractTextFromAiResponse(rawResponse);
-  if (!text) throw new Error('GROQ_EMPTY');
-  return text;
-}
-export async function completeJson(env: JobEnv, system: string, input: unknown, fetcher: typeof fetch = fetch): Promise<Record<string, unknown>> {
-  return (await completeJsonResult(env, system, input, undefined, fetcher)).json;
-}
-async function completeCloudflareJson(env: JobEnv, instruction: string, input: unknown, timeoutMs = 90_000) {
-  const rawResponse = await withTimeout(env.AI.run(TEXT_MODEL, { messages: [{ role: 'system', content: instruction }, { role: 'user', content: JSON.stringify(input) }], response_format: { type: 'json_object' }, reasoning_effort: 'low', max_completion_tokens: 16000, temperature: 0.35 }), timeoutMs, 'CLOUDFLARE_TIMEOUT');
-  const text = extractTextFromAiResponse(rawResponse);
-  if (!text) { console.error(JSON.stringify({ event: 'text_ai_empty', keys: rawResponse && typeof rawResponse === 'object' ? Object.keys(rawResponse) : [], type: typeof rawResponse })); throw new Error('TEXT_EMPTY'); }
-  return text;
-}
-async function completeAgnesJson(env: JobEnv, instruction: string, input: unknown, fetcher: typeof fetch = fetch, timeoutMs = 90_000) {
-  if (!env.AGNES_API_KEY) throw new Error('AGNES_KEY_MISSING');
-  const model = env.AGNES_MODEL || AGNES_TEXT_MODEL;
-  const r = await fetcher('https://apihub.agnes-ai.com/v1/chat/completions', { method: 'POST', headers: { authorization: `Bearer ${env.AGNES_API_KEY}`, 'content-type': 'application/json' }, body: JSON.stringify({ model, messages: [{ role: 'system', content: instruction }, { role: 'user', content: JSON.stringify(input) }], temperature: 0.35, max_tokens: 16000, response_format: { type: 'json_object' } }), signal: AbortSignal.timeout(timeoutMs) });
-  if (!r.ok) throw new Error(r.status === 429 ? 'AGNES_QUOTA' : `AGNES_HTTP_${r.status}`);
-  const rawResponse = await r.json() as { choices?: { message?: { content?: string } }[] };
-  const text = rawResponse.choices?.[0]?.message?.content || '';
-  if (!text) throw new Error('AGNES_EMPTY');
-  return text;
+  if (aiConfig?.provider !== 'openai-compatible' || !aiConfig.apiKey || !aiConfig.baseUrl || !aiConfig.model) throw new Error('USER_KEY_REQUIRED');
+  return parse(await completeOpenAICompatibleJson(aiConfig, instruction, input, fetcher, timeoutMs), aiConfig.model);
 }
 async function completeOpenAICompatibleJson(config: UserAiConfig, instruction: string, input: unknown, fetcher: typeof fetch = fetch, timeoutMs = 150_000) {
   if (!config.apiKey || !config.baseUrl || !config.model) throw new Error('USER_MODEL_CONFIG_INVALID');
@@ -353,34 +261,23 @@ function fallbackMetadata(title: string, summaries: string[], sourceText: string
   };
 }
 async function createIllustration(env: JobEnv, title: string, aiConfig: UserAiConfig | undefined, prompt: string) {
+  void env;
   const safePrompt = `${IMAGE_STYLE_PROMPT}\nScene: ${prompt}`.slice(0, 2000);
-  const drawAgnes = async () => {
-    if (!env.AGNES_API_KEY) throw new Error('AGNES_KEY_MISSING');
-    const r = await fetch('https://apihub.agnes-ai.com/v1/images/generations', { method: 'POST', headers: { authorization: `Bearer ${env.AGNES_API_KEY}`, 'content-type': 'application/json' }, body: JSON.stringify({ model: AGNES_IMAGE_MODEL, prompt: safePrompt, n: 1, size: '1024x768' }), signal: AbortSignal.timeout(30_000) });
-    if (!r.ok) throw new Error(`AGNES_IMAGE_HTTP_${r.status}`);
-    const data = await r.json() as { data?: { url?: string; b64_json?: string }[] };
-    const item = data.data?.[0];
-    if (item?.b64_json) return { image: `data:image/png;base64,${item.b64_json}`, imageModel: AGNES_IMAGE_MODEL };
-    if (item?.url) return { image: item.url, imageModel: AGNES_IMAGE_MODEL };
-    throw new Error('AGNES_IMAGE_EMPTY');
-  };
-  if (env.AGNES_API_KEY && aiConfig?.provider !== 'cloudflare-free') {
-    try { return await drawAgnes(); }
-    catch (agnesError) { console.error(JSON.stringify({ event: 'workflow_agnes_image_fallback', error: agnesError instanceof Error ? agnesError.message : String(agnesError) })); }
-  }
-  try {
-    const x = await withTimeout(env.AI.run(IMAGE_MODEL, { prompt: safePrompt, steps: 4 }), 15_000, 'IMAGE_TIMEOUT');
-    if (!x.image) throw new Error('IMAGE_EMPTY');
-    return { image: `data:image/jpeg;base64,${x.image}`, imageModel: IMAGE_MODEL };
-  } catch (cloudflareError) {
-    if (env.AGNES_API_KEY && aiConfig?.provider === 'cloudflare-free') {
-      try { return await drawAgnes(); }
-      catch (agnesError) { console.error(JSON.stringify({ event: 'workflow_image_svg_fallback', error: agnesError instanceof Error ? agnesError.message : String(agnesError) })); }
-    } else {
-      console.error(JSON.stringify({ event: 'workflow_image_svg_fallback', error: cloudflareError instanceof Error ? cloudflareError.message : String(cloudflareError) }));
+  const imageModel = aiConfig?.imageModel;
+  if (aiConfig?.apiKey && aiConfig.baseUrl && imageModel) {
+    try {
+      const r = await fetch(`${aiConfig.baseUrl}/images/generations`, { method: 'POST', headers: { authorization: `Bearer ${aiConfig.apiKey}`, 'content-type': 'application/json' }, body: JSON.stringify({ model: imageModel, prompt: safePrompt, n: 1, size: '1024x768' }), signal: AbortSignal.timeout(60_000) });
+      if (!r.ok) throw new Error(`USER_IMAGE_HTTP_${r.status}`);
+      const data = await r.json() as { data?: { url?: string; b64_json?: string }[] };
+      const item = data.data?.[0];
+      if (item?.b64_json) return { image: `data:image/png;base64,${item.b64_json}`, imageModel };
+      if (item?.url) return { image: item.url, imageModel };
+      throw new Error('USER_IMAGE_EMPTY');
+    } catch (imageError) {
+      console.error(JSON.stringify({ event: 'user_image_svg_fallback', error: imageError instanceof Error ? imageError.message : String(imageError) }));
     }
-    return { image: fallbackSvg(title), imageModel: 'built-in-svg-fallback' };
   }
+  return { image: fallbackSvg(title), imageModel: 'built-in-svg-fallback' };
 }
 async function rewriteWholeChapter(env: JobEnv, p: JobParams, timeoutMs: number, models: Set<string>) {
   const result = await completeJsonResult(env, [
@@ -403,13 +300,25 @@ export class ReadingWorkflow extends WorkflowEntrypoint<JobEnv, JobParams> {
     return generateAdaptedChapter(this.env, event.payload);
   }
 }
+/** 读者自己的线路配置有问题时不要兜底成内置占位章节，否则读者会以为生成成功了。 */
+function isUserConfigError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return message === 'USER_KEY_REQUIRED' || message === 'USER_MODEL_CONFIG_INVALID' || message.startsWith('USER_MODEL_') || message.startsWith('USER_IMAGE_');
+}
+
 export async function generateAdaptedChapter(env: JobEnv, p: JobParams) {
+  // 站点不再提供共用线路：没有读者自己的 key 就直接报错，
+  // 不要用内置占位章节冒充满意结果（那会让读者以为生成成功了）。
+  if (p.aiConfig?.provider !== 'openai-compatible' || !p.aiConfig.apiKey || !p.aiConfig.baseUrl || !p.aiConfig.model) {
+    throw new Error('USER_KEY_REQUIRED');
+  }
   const models = new Set<string>();
   try {
     const fast = await rewriteWholeChapter(env, p, 12_000, models);
     const illustration = await createIllustration(env, p.title, p.aiConfig, fast.imageCue.prompt);
     return { ...fast, image: illustration.image, source: p.sourceUrl, model: [...models].join(', '), imageModel: illustration.imageModel, parts: 1 };
   } catch (fastError) {
+    if (isUserConfigError(fastError)) throw fastError;
     console.error(JSON.stringify({ event: 'workflow_fast_split_fallback', error: fastError instanceof Error ? fastError.message : String(fastError) }));
   }
   const chunks = splitForRewrite(p.sourceText, 2200);
@@ -433,12 +342,14 @@ export async function generateAdaptedChapter(env: JobEnv, p: JobParams) {
       models.add(part.model);
     });
   } catch (error) {
+    if (isUserConfigError(error)) throw error;
     console.error(JSON.stringify({ event: 'workflow_text_split_failed', error: error instanceof Error ? error.message : String(error) }));
     try {
       const retry = await rewriteWholeChapter(env, p, 70_000, models);
       const illustration = await createIllustration(env, p.title, p.aiConfig, retry.imageCue.prompt);
       return { ...retry, image: illustration.image, source: p.sourceUrl, model: [...models].join(', '), imageModel: illustration.imageModel, parts: 1 };
     } catch (retryError) {
+      if (isUserConfigError(retryError)) throw retryError;
       console.error(JSON.stringify({ event: 'workflow_text_fallback', error: retryError instanceof Error ? retryError.message : String(retryError) }));
       return fallbackJourneyChapter(p.title, p.sourceUrl, p.sourceText);
     }
@@ -456,9 +367,10 @@ export async function generateAdaptedChapter(env: JobEnv, p: JobParams) {
     if (typeof x.chapterTitle !== 'string') throw new Error('INVALID_METADATA');
     metadata = simplifyValue({ chapterTitle: x.chapterTitle, quiz: validateQuiz(x.quiz), imageCue: validateImageCue(x.imageCue) });
   } catch (metadataError) {
+    if (isUserConfigError(metadataError)) throw metadataError;
     console.error(JSON.stringify({ event: 'workflow_metadata_fallback', error: metadataError instanceof Error ? metadataError.message : String(metadataError) }));
     metadata = fallbackMetadata(p.title, summaries, p.sourceText);
   }
   const illustration = await createIllustration(env, p.title, p.aiConfig, metadata.imageCue.prompt);
-  return { ...metadata, chapter: simplifyValue(chapter), image: illustration.image, source: p.sourceUrl, model: [...models].join(', ') || (env.AGNES_MODEL || AGNES_TEXT_MODEL), imageModel: illustration.imageModel, parts: chunks.length };
+  return { ...metadata, chapter: simplifyValue(chapter), image: illustration.image, source: p.sourceUrl, model: [...models].join(', ') || 'unknown', imageModel: illustration.imageModel, parts: chunks.length };
 }

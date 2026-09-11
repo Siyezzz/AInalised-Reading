@@ -1,6 +1,7 @@
 import { headers } from 'next/headers';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { SESSION_COOKIE, accountForSession } from './lib/auth';
 
 export type ChatGPTUser = {
   userId: string;
@@ -17,11 +18,27 @@ const USER_FULL_NAME_ENCODING_HEADER =
 const PERCENT_ENCODED_UTF8 = 'percent-encoded-utf-8';
 const CLOUDFLARE_ACCESS_EMAIL_HEADER = 'cf-access-authenticated-user-email';
 const READER_ID_COOKIE = 'reader_id';
-const SIGN_IN_PATH = '/signin-with-chatgpt';
-const SIGN_OUT_PATH = '/signout-with-chatgpt';
+const SIGN_IN_PATH = '/signin';
+const SIGN_OUT_PATH = '/signin';
 const CALLBACK_PATH = '/callback';
 
 export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
+  const cookieStore = await cookies();
+
+  // 站点自己的登录会话优先：部署在 workers.dev 时没有平台注入的登录 header。
+  const sessionToken = cookieStore.get(SESSION_COOKIE)?.value;
+  if (sessionToken) {
+    const account = await accountForSession(sessionToken);
+    if (account) {
+      return {
+        userId: account.id,
+        displayName: account.email,
+        email: account.email,
+        fullName: null,
+      };
+    }
+  }
+
   const requestHeaders = await headers();
   const userId = requestHeaders.get(USER_ID_HEADER);
   const email = requestHeaders.get(USER_EMAIL_HEADER);
@@ -45,7 +62,6 @@ export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
   }
 
   // Fallback to anonymous cookie-based identity so the site works without OpenAI Sites / Cloudflare Access.
-  const cookieStore = await cookies();
   const readerId = cookieStore.get(READER_ID_COOKIE)?.value;
   if (!readerId) return null;
   return {

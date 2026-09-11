@@ -74,6 +74,12 @@ export default function AdaptReader() {
   }, [jobId]);
   async function generate() {
     if (working.current || !prepared) return;
+    if (!readAiSettings().apiKey) {
+      setBusy(false);
+      setProgress(0);
+      setError('还没有填写 API key。站点不提供共用 AI 额度，请先到「阅读画像」填一个自己的 key（Groq、Gemini 都有免费额度）。');
+      return;
+    }
     working.current = true; setBusy(true); setProgress(32); setLabel('正在创建改写任务'); setError('');
     const id = crypto.randomUUID();
     try {
@@ -133,7 +139,7 @@ export default function AdaptReader() {
   const original = chapter?.source || prepared?.url || source;
   return <article className="chapter-shell"><header className="chapter-intro"><a href="/shelf">返回书架</a><span>《{title}》第 {chapterNumber} 章</span><h1>{chapter?.chapterTitle || prepared?.title || '准备你的阅读版本'}</h1></header>
     {(busy || (!chapter && prepared)) && <div className="adapt-progress" role="status"><strong>{label}</strong><small>{progress}%</small><i><b style={{width: `${progress}%`}} /></i></div>}
-    {error && <div role="alert"><p>{error}</p>{!busy && <button onClick={() => { if (jobId) { localStorage.removeItem(storageKey); autoStarted.current = ''; setJobId(null); setAttempt(x => x+1); } else if (chapter) { void illustrate(chapter).catch(e => setError(String(e))); } else if (prepared) { void generate(); } else setAttempt(x => x+1); }}>重试失败步骤</button>} <a href={`/signin-with-chatgpt?return_to=${encodeURIComponent(`/adapt?title=${title}&source=${source}`)}`} target="_top">登录</a></div>}
+    {error && <div role="alert"><p>{error}</p>{!busy && <button onClick={() => { if (jobId) { localStorage.removeItem(storageKey); autoStarted.current = ''; setJobId(null); setAttempt(x => x+1); } else if (chapter) { void illustrate(chapter).catch(e => setError(String(e))); } else if (prepared) { void generate(); } else setAttempt(x => x+1); }}>重试失败步骤</button>} <a href="/profile">去填 API key</a></div>}
     {notice && <p role="status">{notice}</p>}
     {prepared && !chapter && !busy && <section className="adapt-ready"><div><span>原文已就绪</span><h2>{prepared.title}</h2><p>已识别第 {chapterNumber} 章，共 {prepared.text.length.toLocaleString()} 字符。系统正在自动开始改写和配图，无需再操作。</p></div><details><summary>查看提取的第 {chapterNumber} 章原文</summary><pre>{prepared.text}</pre></details></section>}
     {chapter && <ChapterTemplate chapter={chapter} title={title} sourceUrl={source} chapterNumber={chapterNumber} shelfState={shelfState} answer={answer} chapterFeedback={chapterFeedback} busy={busy} onAddToShelf={addToShelf} onDownload={() => download(chapterMarkdown(chapter), `${title}-第${chapterNumber}章.md`)} onAnswer={setAnswer} onFeedback={(item) => { setChapterFeedback(item); localStorage.setItem(`reading-feedback:${title}:${source}:${chapterNumber}`, item); }} onIllustrate={() => { setBusy(true); illustrate(chapter).catch(e => setError(String(e))).finally(() => setBusy(false)); }} />}

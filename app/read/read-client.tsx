@@ -78,8 +78,7 @@ export default function ReadClient() {
           <p className="inline-notice">
             登录后才能保存。
             <a
-              href={`/signin-with-chatgpt?return_to=${encodeURIComponent(`/read?title=${encodeURIComponent(title)}&source=${encodeURIComponent(sourceUrl)}&available=${available ? '1' : '0'}&autosave=1`)}`}
-              target="_top"
+              href={`/signin?return_to=${encodeURIComponent(`/read?title=${encodeURIComponent(title)}&source=${encodeURIComponent(sourceUrl)}&available=${available ? '1' : '0'}&autosave=1`)}`}
             >
               现在登录
             </a>

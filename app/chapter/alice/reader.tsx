@@ -49,7 +49,7 @@ export default function AliceChapter() {
           <button onClick={saveToShelf} disabled={saveStatus === 'saving' || saveStatus === 'saved'}>{saveStatus === 'saved' ? <Check size={17} /> : <BookmarkPlus size={17} />}{saveStatus === 'saving' ? '正在收藏' : saveStatus === 'saved' ? '已收藏到书架' : '收藏这本书'}</button>
           <span>先读一读，喜欢再收藏。</span>
         </div>
-        {saveStatus === 'login' && <p className="chapter-save-message">登录后才能收藏。<a href="/signin-with-chatgpt?return_to=/chapter/alice" target="_top">现在登录</a></p>}
+        {saveStatus === 'login' && <p className="chapter-save-message">登录后才能收藏。<a href="/signin?return_to=/chapter/alice">现在登录</a></p>}
         {saveStatus === 'error' && <p className="chapter-save-message">没有收藏成功，请再试一次。</p>}
       </header>
       <section className="chapter-body">
