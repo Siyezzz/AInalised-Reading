@@ -84,7 +84,14 @@ export default function AdaptReader() {
     if (working.current || !prepared) return;
     working.current = true; setBusy(true); setProgress(32); setLabel('正在创建改写任务'); setError('');
     const id = crypto.randomUUID();
-    try { await call({ action: 'start-job', jobId: id, sourceText: prepared.text }); localStorage.setItem(storageKey, id); setJobId(id); }
+    try {
+      const result = await call({ action: 'start-job', jobId: id, sourceText: prepared.text });
+      if (result.job?.status === 'complete' && result.job.output) {
+        if (!validChapter(result.job.output)) throw new Error('生成结果格式不完整');
+        setChapter(result.job.output); setProgress(100); await cache(result.job.output); setBusy(false); return;
+      }
+      localStorage.setItem(storageKey, id); setJobId(id);
+    }
     catch(e) { setError(e instanceof Error ? e.message : '提交失败'); setBusy(false); } finally { working.current = false; }
   }
   useEffect(() => {

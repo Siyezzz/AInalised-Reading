@@ -988,10 +988,12 @@ export default function Home() {
             </button>
           </div>
           <div className="welcome-actions">
+            <a href="/profile">
+              先登录注册并建立画像 <ChevronRight size={15} />
+            </a>
             <a href="/library">
               浏览全部书目 <ChevronRight size={15} />
             </a>
-            <a href="/profile">完善我的阅读画像</a>
           </div>
         </div>
         <aside className="reading-note">

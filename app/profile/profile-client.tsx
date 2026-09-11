@@ -4,6 +4,18 @@ import { Check, ChevronRight, Search } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import BrandMark from '../brand-mark';
 
+const apiPresets = [
+  { id: 'openai', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4.1-mini', note: '稳定，通常需要付费余额' },
+  { id: 'groq', name: 'Groq 免费/便宜', baseUrl: 'https://api.groq.com/openai/v1', model: 'qwen/qwen3.8-27b', note: '速度快，适合先测试文本改写' },
+  { id: 'gemini', name: 'Gemini 免费额度', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash', note: 'Google AI Studio key，性价比高' },
+  { id: 'openrouter', name: 'OpenRouter 免费模型', baseUrl: 'https://openrouter.ai/api/v1', model: 'deepseek/deepseek-chat-v3.1:free', note: '模型名以后台显示为准' },
+  { id: 'deepseek', name: 'DeepSeek 便宜', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', note: '中文和长文本成本低' },
+  { id: 'siliconflow', name: '硅基流动', baseUrl: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen2.5-72B-Instruct', note: '国内网络更友好' },
+  { id: 'together', name: 'Together AI', baseUrl: 'https://api.together.xyz/v1', model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', note: '常见开源大模型接口' },
+  { id: 'moonshot', name: 'Moonshot Kimi', baseUrl: 'https://api.moonshot.cn/v1', model: 'kimi-k2-0711-preview', note: '中文长文本可试' },
+  { id: 'custom', name: '自定义 OpenAI-compatible', baseUrl: '', model: '', note: '填供应商给你的 /v1 地址和模型名' },
+];
+
 export default function ProfileClient({ email }: { email: string }) {
   const params = useSearchParams();
   const book = params.get('book');
@@ -14,8 +26,9 @@ export default function ProfileClient({ email }: { email: string }) {
     [bookStatus, setBookStatus] = useState<'idle' | 'saving' | 'error'>('idle'),
     [bookError, setBookError] = useState(''),
     [aiProvider, setAiProvider] = useState('system-agnes'),
+    [apiPreset, setApiPreset] = useState('openai'),
     [apiBaseUrl, setApiBaseUrl] = useState('https://api.openai.com/v1'),
-    [apiModel, setApiModel] = useState(''),
+    [apiModel, setApiModel] = useState('gpt-4.1-mini'),
     [apiKey, setApiKey] = useState(''),
     [modelSaved, setModelSaved] = useState(false);
   useEffect(() => {
@@ -36,6 +49,9 @@ export default function ProfileClient({ email }: { email: string }) {
       if (raw.apiBaseUrl) setApiBaseUrl(raw.apiBaseUrl);
       if (raw.apiModel) setApiModel(raw.apiModel);
       if (raw.apiKey) setApiKey(raw.apiKey);
+      const matched = apiPresets.find((item) => item.baseUrl && item.baseUrl === raw.apiBaseUrl);
+      if (matched) setApiPreset(matched.id);
+      else if (raw.apiBaseUrl) setApiPreset('custom');
     } catch { /* Ignore broken local settings. */ }
   }, []);
   function toggle(x: string) {
@@ -55,6 +71,14 @@ export default function ProfileClient({ email }: { email: string }) {
       : { aiProvider };
     localStorage.setItem('zhiji-ai-settings', JSON.stringify(value));
     setModelSaved(true);
+  }
+  function choosePreset(id: string) {
+    setApiPreset(id);
+    const preset = apiPresets.find((item) => item.id === id);
+    if (!preset) return;
+    if (preset.baseUrl) setApiBaseUrl(preset.baseUrl);
+    if (preset.model) setApiModel(preset.model);
+    setModelSaved(false);
   }
   async function startReading() {
     if (!book || bookStatus === 'saving') return;
@@ -150,13 +174,21 @@ export default function ProfileClient({ email }: { email: string }) {
             <label>
               连接方式
               <select value={aiProvider} onChange={(event) => { setAiProvider(event.target.value); setModelSaved(false); }}>
-                <option value="system-agnes">默认 Agnes</option>
+                <option value="system-agnes">默认线路 Groq / Agnes</option>
                 <option value="cloudflare-free">Cloudflare 免费模型</option>
                 <option value="openai-compatible">我的 API key</option>
               </select>
             </label>
             {aiProvider === 'openai-compatible' ? (
               <>
+                <label>
+                  API 服务
+                  <select value={apiPreset} onChange={(event) => choosePreset(event.target.value)}>
+                    {apiPresets.map((preset) => (
+                      <option value={preset.id} key={preset.id}>{preset.name} - {preset.note}</option>
+                    ))}
+                  </select>
+                </label>
                 <label>
                   Base URL
                   <input value={apiBaseUrl} onChange={(event) => { setApiBaseUrl(event.target.value); setModelSaved(false); }} placeholder="https://api.openai.com/v1" />
@@ -171,7 +203,7 @@ export default function ProfileClient({ email }: { email: string }) {
                 </label>
               </>
             ) : (
-              <p>{aiProvider === 'cloudflare-free' ? '优先尝试 Cloudflare Workers AI；额度不可用时回退到系统 Agnes。' : '不需要填写 key；优先使用系统 Agnes，失败时回退到 Cloudflare 免费模型。'}</p>
+              <p>{aiProvider === 'cloudflare-free' ? '优先尝试 Cloudflare Workers AI；额度不可用时回退到站点备用线路。' : '不需要填写 key；优先使用站点 Groq，失败时依次回退到 Agnes 和 Cloudflare。'}</p>
             )}
             <button type="button" className="save-model" onClick={saveModelSettings}>
               {modelSaved ? '模型已保存' : '保存模型设置'}
