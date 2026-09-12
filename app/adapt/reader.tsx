@@ -2,10 +2,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ExternalLink } from 'lucide-react';
-import { readAiSettings } from '../lib/ai-presets';
+import { AI_SETTINGS_CHANGED, OPEN_AI_SETUP, hasUsableAiSettings, readAiSettings } from '../lib/ai-presets';
 import { ChapterTemplate, type Chapter } from './chapter-template';
 type Ticket = { editorUrl: string; token: string; profile: Record<string, unknown>; sourceText?: string; content?: Chapter; error?: string };
 type Result = { job?: { status: string; output?: Chapter; error?: { message?: string } }; content?: Chapter; source?: { title: string; text: string; url: string }; image?: string; message?: string; detail?: string; error?: string };
+/**
+ * 哪些错误是「改 key」能解决的。只有这些才隐藏「重试」按钮——
+ * 重试注定失败的按钮比没有按钮更糟。注意不要用裸「key」匹配，
+ * 否则一般的 5xx 也会被误判成配置问题。
+ */
+const KEY_ISSUE_PATTERN = /USER_KEY_REQUIRED|USER_MODEL_QUOTA|USER_MODEL_CONFIG_INVALID|USER_MODEL_HTTP_40[13]|UNAUTHORIZED|额度|余额|欠费|key 无效|未授权/;
 function validChapter(x: Chapter) { return x && typeof x.chapterTitle === 'string' && Array.isArray(x.chapter) && x.chapter.length >= 4 && x.chapter.every(p => typeof p === 'string' && p.trim()) && x.quiz && typeof x.quiz.question === 'string' && x.quiz.options?.length === 4 && x.quiz.options.every(o => typeof o === 'string') && Number.isInteger(x.quiz.correctIndex) && x.quiz.correctIndex >= 0 && x.quiz.correctIndex < 4 && x.quiz.wrongFeedback?.length === 4; }
 export default function AdaptReader() {
   const params = useSearchParams(), title = params.get('title') || '', source = params.get('source') || '';
@@ -19,14 +25,17 @@ export default function AdaptReader() {
   const ticket = useRef<Ticket | null>(null), working = useRef(false), autoStarted = useRef('');
   const [jobId, setJobId] = useState<string | null>(null);
   const storageKey = 'reading-job:v2:' + title + ':' + source + ':' + chapterNumber;
+  // 供事件回调读取最新状态（事件监听只注册一次，闭包里拿不到新的 state）。
+  const latest = useRef({ chapter, error });
+  useEffect(() => { latest.current = { chapter, error }; }, [chapter, error]);
+  function openKeySetup() { window.dispatchEvent(new Event(OPEN_AI_SETUP)); }
   async function call(body: Record<string, unknown>): Promise<Result> {
     const t = ticket.current!;
     const aiSettings = body.action === 'start-job' || body.action === 'image' ? readAiSettings() : {};
     const r = await fetch(t.editorUrl, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` }, body: JSON.stringify({ title, sourceUrl: source, chapterNumber, profile: t.profile, ...aiSettings, ...body }), signal: AbortSignal.timeout(240_000) });
     const x = await r.json() as Result;
     if (!r.ok) {
-      const detail = String(x.error || '') + ' ' + String(x.message || '');
-      if (/KEY|QUOTA|key|额度|余额|无效|欠费/.test(detail)) setKeyIssue(true);
+      setKeyIssue(KEY_ISSUE_PATTERN.test([x.error, x.message, x.detail].filter(Boolean).join(' ')));
       throw new Error([x.message || x.error || '服务请求失败', x.detail].filter(Boolean).join('：'));
     }
     return x;
@@ -53,6 +62,36 @@ export default function AdaptReader() {
     } catch(e) { if (active) setError(e instanceof Error ? e.message : '获取失败'); } finally { if (active) setBusy(false); } })();
     return () => { active = false; };
   }, [title, source, chapterNumber, fresh, attempt]);
+  /**
+   * 读者中途去填 / 改 key 时必须能自动接上。
+   * 触发场景：① 就地打开引导弹窗填完 key；② 跳去「阅读画像」设置后按浏览器返回，
+   * 页面被 bfcache 还原（此时组件不会重新挂载，错误状态一直都在）。
+   * 之前这两种情况都会停在错误页：autoStarted 已置位、error 又有值，
+   * 自动改写的那条 useEffect 永远不会再跑。
+   */
+  useEffect(() => {
+    const resume = () => {
+      if (latest.current.chapter) return;       // 已经读到章节，别打断
+      if (!latest.current.error) return;        // 本来没出错，不用管
+      if (!hasUsableAiSettings()) return;       // key 还是没配好，没什么可接续
+      const pending = localStorage.getItem(storageKey);
+      if (pending) localStorage.removeItem(storageKey); // 清掉上一次失败的任务，否则会一直读到旧的失败状态
+      autoStarted.current = '';
+      working.current = false;
+      setJobId(null);
+      setError('');
+      setKeyIssue(false);
+      setNotice('');
+      setAttempt((x) => x + 1);                 // 走一遍完整流程：重取票据 → 取原文 → 自动改写
+    };
+    const onPageShow = (event: PageTransitionEvent) => { if (event.persisted) resume(); };
+    window.addEventListener(AI_SETTINGS_CHANGED, resume);
+    window.addEventListener('pageshow', onPageShow as EventListener);
+    return () => {
+      window.removeEventListener(AI_SETTINGS_CHANGED, resume);
+      window.removeEventListener('pageshow', onPageShow as EventListener);
+    };
+  }, [storageKey]);
   async function illustrate(content: Chapter) {
     if (!content.imageCue?.prompt) throw new Error('没有生成插图描述，请重试改写');
     setLabel('正在绘制本章插图');
@@ -80,11 +119,11 @@ export default function AdaptReader() {
   }, [jobId]);
   async function generate() {
     if (working.current || !prepared) return;
-    if (!readAiSettings().apiKey) {
+    if (!hasUsableAiSettings()) {
       setBusy(false);
       setProgress(0);
       setKeyIssue(true);
-      setError('还没有填写 API key。站点不提供共用 AI 额度，请先到「阅读画像」填一个自己的 key（Groq、Gemini 都有免费额度）。');
+      setError('还没有填写可用的 API key。站点不提供共用 AI 额度，请先填一个自己的 key（Groq、Gemini 都有免费额度）。');
       return;
     }
     setKeyIssue(false);
@@ -148,7 +187,7 @@ export default function AdaptReader() {
   return <article className="chapter-shell"><header className="chapter-intro"><a href="/shelf">返回书架</a><span>《{title}》第 {chapterNumber} 章</span><h1>{chapter?.chapterTitle || prepared?.title || '准备你的阅读版本'}</h1></header>
     {(busy || (!chapter && prepared)) && <div className="adapt-progress" role="status"><strong>{label}</strong><small>{progress}%</small><i><b style={{width: `${progress}%`}} /></i></div>}
     {error && <div role="alert"><p>{error}</p>{keyIssue
-      ? <a className="alert-action" href="/profile">去填 API key</a>
+      ? <><button className="alert-action" onClick={openKeySetup}>填写 API key</button> <a href="/profile">去阅读画像设置</a></>
       : !busy && <><button onClick={() => { if (jobId) { localStorage.removeItem(storageKey); autoStarted.current = ''; setJobId(null); setAttempt(x => x+1); } else if (chapter) { void illustrate(chapter).catch(e => setError(String(e))); } else if (prepared) { void generate(); } else setAttempt(x => x+1); }}>重试失败步骤</button> <a href="/profile">检查 AI 线路设置</a></>}</div>}
     {notice && <p role="status">{notice}</p>}
     {prepared && !chapter && !busy && <section className="adapt-ready"><div><span>原文已就绪</span><h2>{prepared.title}</h2><p>已识别第 {chapterNumber} 章，共 {prepared.text.length.toLocaleString()} 字符。系统正在自动开始改写和配图，无需再操作。</p></div><details><summary>查看提取的第 {chapterNumber} 章原文</summary><pre>{prepared.text}</pre></details></section>}

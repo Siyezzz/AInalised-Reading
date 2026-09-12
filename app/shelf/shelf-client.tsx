@@ -178,19 +178,23 @@ export default function ShelfClient({
             <button onClick={() => window.location.reload()}>重新加载</button>
           </div>
         )}
-        {books.map((book) => (
+        {books.map((book) => {
+          // 导入的书 sourceUrl 是 upload:<id>（而不是外链），要单独识别，
+          // 否则会被当成本站抓取的公版书，既标错成 WEB 也没有查看原文的入口。
+          const imported = book.sourceUrl?.startsWith('upload:') ?? false;
+          return (
           <article className="shelf-book" key={book.id}>
             <div className="pdf-cover">
-              {book.sourceUrl ? <BookOpen size={25} /> : <FileText size={25} />}
-              <small>{book.sourceUrl ? 'WEB' : 'FILE'}</small>
+              {imported ? <FileText size={25} /> : <BookOpen size={25} />}
+              <small>{imported ? 'FILE' : 'WEB'}</small>
             </div>
             <div>
               <span>{book.source}</span>
               <h2>{book.title}</h2>
               <p>
-                {book.sourceUrl
-                  ? `在线来源 · ${book.status}`
-                  : `${(book.size / 1024 / 1024).toFixed(1)} MB · ${book.status}`}
+                {imported
+                  ? `${(book.size / 1024 / 1024).toFixed(1)} MB · ${book.status}`
+                  : `在线来源 · ${book.status}`}
               </p>
               <i>
                 <b style={{ width: `${book.progress}%` }} />
@@ -199,11 +203,12 @@ export default function ShelfClient({
             </div>
             <div className="shelf-book-actions">
               <a className="continue-reading" href={`/adapt?title=${encodeURIComponent(book.title)}&source=${encodeURIComponent(book.sourceUrl || `upload:${book.id}`)}`}>继续阅读</a>
-              {!book.sourceUrl && <a className="view-original" href={`/pdf?id=${encodeURIComponent(book.id)}&title=${encodeURIComponent(book.title)}`}><Eye size={14} />查看原文</a>}
+              {imported && <a className="view-original" href={`/pdf?id=${encodeURIComponent(book.id)}&title=${encodeURIComponent(book.title)}`}><Eye size={14} />查看原文</a>}
               <button className="remove-book" onClick={() => removeBook(book)} disabled={removing === book.id} aria-label={`把《${book.title}》移出书架`}><Trash2 size={16} />{removing === book.id ? '正在移除' : '移出'}</button>
             </div>
           </article>
-        ))}
+          );
+        })}
         {!loading && !loadError && !books.length && !busy && (
           <div className="empty-shelf">
             <FileText size={30} />

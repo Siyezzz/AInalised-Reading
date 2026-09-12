@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Check, ChevronRight, Search } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import BrandMark from '../brand-mark';
-import { apiPresets } from '../lib/ai-presets';
+import { apiPresets, readAiSettings, saveAiSettings } from '../lib/ai-presets';
 
 export default function ProfileClient({ email }: { email: string }) {
   const params = useSearchParams();
@@ -19,7 +19,8 @@ export default function ProfileClient({ email }: { email: string }) {
     [apiModel, setApiModel] = useState('qwen/qwen3.8-27b'),
     [apiKey, setApiKey] = useState(''),
     [imageModel, setImageModel] = useState(''),
-    [modelSaved, setModelSaved] = useState(false);
+    [modelSaved, setModelSaved] = useState(false),
+    [modelError, setModelError] = useState('');
   const keyApply = apiPresets.find((item) => item.id === apiPreset);
   useEffect(() => {
     fetch('/api/profile')
@@ -34,7 +35,7 @@ export default function ProfileClient({ email }: { email: string }) {
   }, []);
   useEffect(() => {
     try {
-      const raw = JSON.parse(localStorage.getItem('zhiji-ai-settings') || '{}') as { apiBaseUrl?: string; apiModel?: string; apiKey?: string; imageModel?: string };
+      const raw = readAiSettings();
       // 站点已不再提供共用线路，旧配置里的 system-agnes / cloudflare-free 一律归到自有 key。
       if (raw.apiBaseUrl) setApiBaseUrl(raw.apiBaseUrl);
       if (raw.apiModel) setApiModel(raw.apiModel);
@@ -57,6 +58,11 @@ export default function ProfileClient({ email }: { email: string }) {
     if (response.ok) setSaved(true);
   }
   function saveModelSettings() {
+    if (!apiBaseUrl.trim() || !apiModel.trim() || apiKey.trim().length < 8) {
+      setModelError('Base URL、模型名和 API key 都要填完整，key 至少 8 位。');
+      setModelSaved(false);
+      return;
+    }
     const value: Record<string, string> = {
       aiProvider: 'openai-compatible',
       apiBaseUrl: apiBaseUrl.trim(),
@@ -64,7 +70,9 @@ export default function ProfileClient({ email }: { email: string }) {
       apiKey: apiKey.trim(),
     };
     if (imageModel.trim()) value.imageModel = imageModel.trim();
-    localStorage.setItem('zhiji-ai-settings', JSON.stringify(value));
+    // 统一写入口：会广播变更事件，正在改写的章节页收到后自动继续。
+    saveAiSettings(value);
+    setModelError('');
     setModelSaved(true);
   }
   function choosePreset(id: string) {
@@ -74,6 +82,7 @@ export default function ProfileClient({ email }: { email: string }) {
     if (preset.baseUrl) setApiBaseUrl(preset.baseUrl);
     if (preset.model) setApiModel(preset.model);
     setModelSaved(false);
+    setModelError('');
   }
   async function startReading() {
     if (!book || bookStatus === 'saving') return;
@@ -184,20 +193,21 @@ export default function ProfileClient({ email }: { email: string }) {
             )}
             <label>
               Base URL
-              <input value={apiBaseUrl} onChange={(event) => { setApiBaseUrl(event.target.value); setModelSaved(false); }} placeholder="https://api.groq.com/openai/v1" />
+              <input value={apiBaseUrl} onChange={(event) => { setApiBaseUrl(event.target.value); setModelSaved(false); setModelError(''); }} placeholder="https://api.groq.com/openai/v1" />
             </label>
             <label>
               Model
-              <input value={apiModel} onChange={(event) => { setApiModel(event.target.value); setModelSaved(false); }} placeholder="provider model id" />
+              <input value={apiModel} onChange={(event) => { setApiModel(event.target.value); setModelSaved(false); setModelError(''); }} placeholder="provider model id" />
             </label>
             <label>
               API key
-              <input type="password" value={apiKey} onChange={(event) => { setApiKey(event.target.value); setModelSaved(false); }} placeholder="sk-..." autoComplete="off" />
+              <input type="password" value={apiKey} onChange={(event) => { setApiKey(event.target.value); setModelSaved(false); setModelError(''); }} placeholder="sk-..." autoComplete="off" />
             </label>
             <label>
               插图模型（可选）
-              <input value={imageModel} onChange={(event) => { setImageModel(event.target.value); setModelSaved(false); }} placeholder="留空则用内置插图，例如 gpt-image-1" />
+              <input value={imageModel} onChange={(event) => { setImageModel(event.target.value); setModelSaved(false); setModelError(''); }} placeholder="留空则用内置插图，例如 gpt-image-1" />
             </label>
+            {modelError && <p className="model-settings-error" role="alert">{modelError}</p>}
             <button type="button" className="save-model" onClick={saveModelSettings}>
               {modelSaved ? '模型已保存' : '保存模型设置'}
             </button>

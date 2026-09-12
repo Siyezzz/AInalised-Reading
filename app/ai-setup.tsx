@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { Check, ExternalLink, KeyRound, X } from 'lucide-react';
-import { AI_SETTINGS_KEY, AI_SETUP_DONE_KEY, apiPresets, readAiSettings } from './lib/ai-presets';
+import { AI_SETUP_DONE_KEY, OPEN_AI_SETUP, apiPresets, readAiSettings, saveAiSettings } from './lib/ai-presets';
 
 /**
  * 首次进入站点时的线路引导。
@@ -31,9 +31,22 @@ export default function AiSetup() {
     setOpen(true);
   }, []);
 
+  // 任何页面（比如改写页报「没填 key」）都可以把弹窗叫出来，
+  // 这样读者不用离开当前页去别处设置。
+  useEffect(() => {
+    const reopen = () => {
+      setError('');
+      setSaved(false);
+      setOpen(true);
+    };
+    window.addEventListener(OPEN_AI_SETUP, reopen);
+    return () => window.removeEventListener(OPEN_AI_SETUP, reopen);
+  }, []);
+
   function finish(settings: Record<string, string>) {
+    // saveAiSettings 会广播变更事件，正在改写的章节页收到后会自动继续。
+    saveAiSettings(settings);
     try {
-      localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(settings));
       localStorage.setItem(AI_SETUP_DONE_KEY, '1');
     } catch {
       /* 隐身模式下写不进去，也不该挡住阅读。 */

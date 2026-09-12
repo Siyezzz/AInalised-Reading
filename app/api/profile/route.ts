@@ -1,6 +1,18 @@
 import { env } from 'cloudflare:workers';
 import { getChatGPTUser } from '../../chatgpt-auth';
 
+/** likes 存的是 JSON 字符串，但历史数据或手工改过的行可能是别的格式，别让整个接口 500。 */
+function parseLikes(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((x): x is string => typeof x === 'string');
+  if (typeof value !== 'string') return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return value ? [value] : [];
+  }
+}
+
 export async function GET() {
   const user = await getChatGPTUser();
   if (!user) return Response.json({ user: null });
@@ -11,7 +23,7 @@ export async function GET() {
     .first<{ goal: string; level: string; likes: string }>();
   return Response.json({
     user: { email: user.email, displayName: user.displayName },
-    profile: row ? { ...row, likes: JSON.parse(row.likes) } : null,
+    profile: row ? { goal: row.goal, level: row.level, likes: parseLikes(row.likes) } : null,
   });
 }
 
