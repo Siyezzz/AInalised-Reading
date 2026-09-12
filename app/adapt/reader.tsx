@@ -14,6 +14,8 @@ export default function AdaptReader() {
   const [chapter, setChapter] = useState<Chapter | null>(null), [error, setError] = useState(''), [label, setLabel] = useState('正在获取原文'), [busy, setBusy] = useState(true), [prepared, setPrepared] = useState<Result['source']>(), [answer, setAnswer] = useState<number | null>(null), [notice, setNotice] = useState(''), [attempt, setAttempt] = useState(0);
   const [progress, setProgress] = useState(8), [shelfState, setShelfState] = useState<'idle'|'saving'|'saved'|'error'>('idle');
   const [chapterFeedback, setChapterFeedback] = useState('');
+  // 错误原因如果是「没填 / 填错了自己的 key」，重试没有意义，应直接引导去配置。
+  const [keyIssue, setKeyIssue] = useState(false);
   const ticket = useRef<Ticket | null>(null), working = useRef(false), autoStarted = useRef('');
   const [jobId, setJobId] = useState<string | null>(null);
   const storageKey = 'reading-job:v2:' + title + ':' + source + ':' + chapterNumber;
@@ -22,7 +24,11 @@ export default function AdaptReader() {
     const aiSettings = body.action === 'start-job' || body.action === 'image' ? readAiSettings() : {};
     const r = await fetch(t.editorUrl, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` }, body: JSON.stringify({ title, sourceUrl: source, chapterNumber, profile: t.profile, ...aiSettings, ...body }), signal: AbortSignal.timeout(240_000) });
     const x = await r.json() as Result;
-    if (!r.ok) throw new Error([x.message || x.error || '服务请求失败', x.detail].filter(Boolean).join('：'));
+    if (!r.ok) {
+      const detail = String(x.error || '') + ' ' + String(x.message || '');
+      if (/KEY|QUOTA|key|额度|余额|无效|欠费/.test(detail)) setKeyIssue(true);
+      throw new Error([x.message || x.error || '服务请求失败', x.detail].filter(Boolean).join('：'));
+    }
     return x;
   }
   async function cache(content: Chapter) {
@@ -77,9 +83,11 @@ export default function AdaptReader() {
     if (!readAiSettings().apiKey) {
       setBusy(false);
       setProgress(0);
+      setKeyIssue(true);
       setError('还没有填写 API key。站点不提供共用 AI 额度，请先到「阅读画像」填一个自己的 key（Groq、Gemini 都有免费额度）。');
       return;
     }
+    setKeyIssue(false);
     working.current = true; setBusy(true); setProgress(32); setLabel('正在创建改写任务'); setError('');
     const id = crypto.randomUUID();
     try {
@@ -139,7 +147,9 @@ export default function AdaptReader() {
   const original = chapter?.source || prepared?.url || source;
   return <article className="chapter-shell"><header className="chapter-intro"><a href="/shelf">返回书架</a><span>《{title}》第 {chapterNumber} 章</span><h1>{chapter?.chapterTitle || prepared?.title || '准备你的阅读版本'}</h1></header>
     {(busy || (!chapter && prepared)) && <div className="adapt-progress" role="status"><strong>{label}</strong><small>{progress}%</small><i><b style={{width: `${progress}%`}} /></i></div>}
-    {error && <div role="alert"><p>{error}</p>{!busy && <button onClick={() => { if (jobId) { localStorage.removeItem(storageKey); autoStarted.current = ''; setJobId(null); setAttempt(x => x+1); } else if (chapter) { void illustrate(chapter).catch(e => setError(String(e))); } else if (prepared) { void generate(); } else setAttempt(x => x+1); }}>重试失败步骤</button>} <a href="/profile">去填 API key</a></div>}
+    {error && <div role="alert"><p>{error}</p>{keyIssue
+      ? <a className="alert-action" href="/profile">去填 API key</a>
+      : !busy && <><button onClick={() => { if (jobId) { localStorage.removeItem(storageKey); autoStarted.current = ''; setJobId(null); setAttempt(x => x+1); } else if (chapter) { void illustrate(chapter).catch(e => setError(String(e))); } else if (prepared) { void generate(); } else setAttempt(x => x+1); }}>重试失败步骤</button> <a href="/profile">检查 AI 线路设置</a></>}</div>}
     {notice && <p role="status">{notice}</p>}
     {prepared && !chapter && !busy && <section className="adapt-ready"><div><span>原文已就绪</span><h2>{prepared.title}</h2><p>已识别第 {chapterNumber} 章，共 {prepared.text.length.toLocaleString()} 字符。系统正在自动开始改写和配图，无需再操作。</p></div><details><summary>查看提取的第 {chapterNumber} 章原文</summary><pre>{prepared.text}</pre></details></section>}
     {chapter && <ChapterTemplate chapter={chapter} title={title} sourceUrl={source} chapterNumber={chapterNumber} shelfState={shelfState} answer={answer} chapterFeedback={chapterFeedback} busy={busy} onAddToShelf={addToShelf} onDownload={() => download(chapterMarkdown(chapter), `${title}-第${chapterNumber}章.md`)} onAnswer={setAnswer} onFeedback={(item) => { setChapterFeedback(item); localStorage.setItem(`reading-feedback:${title}:${source}:${chapterNumber}`, item); }} onIllustrate={() => { setBusy(true); illustrate(chapter).catch(e => setError(String(e))).finally(() => setBusy(false)); }} />}

@@ -1,6 +1,8 @@
 import { env } from 'cloudflare:workers';
 import { getChatGPTUser } from '../../chatgpt-auth';
 
+const MAX_UPLOAD_BYTES = 40 * 1024 * 1024;
+
 const ALLOWED_SOURCES = new Set([
   'openlibrary.org',
   'www.gutenberg.org',
@@ -31,17 +33,45 @@ export async function POST(request: Request) {
 
   const contentType = request.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) {
-    return Response.json(
-      { error: 'PDF 导入暂时暂停。请先从书库或搜索页选择公版名著生成改写。' },
-      { status: 400 },
-    );
+    // 导入电子书不需要上传原始二进制：正文已由浏览器端抽取。见下面的 action=import。
+    return Response.json({ error: '请改用 JSON 提交导入内容（正文已在本地抽取，无需上传原文件）' }, { status: 415 });
   }
 
   if (contentType.includes('application/json')) {
     const body = (await request.json()) as {
+      action?: string;
       title?: string;
       sourceUrl?: string;
+      extractedText?: string;
+      fileName?: string;
+      size?: number;
+      mimeType?: string;
     };
+
+    if (body.action === 'import') {
+      const extractedText = typeof body.extractedText === 'string' ? body.extractedText : '';
+      if (extractedText.replace(/\s/g, '').length < 500)
+        return Response.json({ error: '没有识别到足够正文；扫描版 PDF 暂时需要先做文字识别' }, { status: 422 });
+      const size = Number(body.size) || 0;
+      if (size > MAX_UPLOAD_BYTES)
+        return Response.json({ error: `文件超过 ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)}MB 上限` }, { status: 413 });
+
+      const title = (body.title || body.fileName || '').replace(/\.[^.]+$/, '').trim().slice(0, 180) || '导入的书';
+      const id = crypto.randomUUID();
+      const now = Date.now();
+      const sourceUrl = `upload:${id}`;
+      await env.DB.prepare(
+        'INSERT INTO shelf_books (id,user_id,title,source,source_url,file_key,content_type,extracted_text,size,progress,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+      )
+        .bind(id, user.userId, title, '导入', sourceUrl, null, body.mimeType?.slice(0, 120) || 'text/plain', extractedText.slice(0, 400_000), size, 0, '正在阅读', now)
+        .run();
+
+      return Response.json({
+        book: { id, title, source: '导入', sourceUrl, size, progress: 0, status: '正在阅读', createdAt: now },
+        readUrl: `/adapt?title=${encodeURIComponent(title)}&source=${encodeURIComponent(sourceUrl)}`,
+      });
+    }
+
     const title = body.title?.trim().slice(0, 180);
     const sourceUrl = body.sourceUrl?.trim().slice(0, 500);
     if (!title || !sourceUrl)

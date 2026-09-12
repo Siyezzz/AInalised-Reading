@@ -56,35 +56,35 @@ export default function ShelfClient({
     setBusy(true);
     setUploadProgress(4);
     setMessage('正在读取文件');
-    const form = new FormData();
-    let extractionFailed = false;
     try {
       let extractedText = '';
       try {
         extractedText = await extractFirstChapter(file, (value, label) => { setUploadProgress(value); setMessage(label); });
-      } catch {
-        extractionFailed = true;
+      } catch (error) {
+        // 正文抽取是导入的前置条件：站点只保存正文，不保存原始文件。
+        throw new Error(error instanceof Error ? error.message : '这个文件里的正文无法识别');
       }
       setUploadProgress(64);
-      setMessage('正在保存文件');
-      form.append('file', file);
-      if (extractedText) form.append('extractedText', extractedText);
+      setMessage('正在保存到书架');
+      // 原始二进制留在本地，只把抽取出的正文发到服务端。
       const response = await fetch('/api/library', {
         method: 'POST',
-        body: form,
+        headers: { 'content-type': 'application/json' },
         credentials: 'include',
+        body: JSON.stringify({
+          action: 'import',
+          title: file.name,
+          fileName: file.name,
+          mimeType: file.type,
+          size: file.size,
+          extractedText,
+        }),
       });
       const text = await response.text();
       const data = text ? JSON.parse(text) as { error?: string; book: ShelfBook; readUrl: string } : {} as { error?: string; book: ShelfBook; readUrl: string };
       if (!response.ok) throw new Error(data.error || '上传失败');
       setBooks((current) => [data.book, ...current]);
       setUploadProgress(100);
-      if (extractionFailed) {
-        setMessage('PDF 已保存。文字识别暂不可用，你可以先查看原文。');
-        setBusy(false);
-        if (input.current) input.current.value = '';
-        return;
-      }
       setMessage('第一章已经提取，正在进入 AI 改写');
       window.setTimeout(() => { window.location.href = data.readUrl; }, 500);
     } catch (error) {
@@ -95,7 +95,7 @@ export default function ShelfClient({
     }
   }
   async function removeBook(book: ShelfBook) {
-    if (!window.confirm(`确定把《${book.title}》移出书架吗？${book.sourceUrl ? '' : ' 上传的 PDF 文件也会一并删除。'}`)) return;
+    if (!window.confirm(`确定把《${book.title}》移出书架吗？${book.sourceUrl?.startsWith('upload:') ? ' 导入时抽取的正文也会一并删除。' : ''}`)) return;
     setRemoving(book.id);
     setMessage('');
     try {

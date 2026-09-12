@@ -326,3 +326,18 @@
   font-size: 12px;
   color: #b4452f;
 }
+/* 章节页报错区：错误原因与下一步动作分开，避免「重试」出现在无法重试的场景 */
+.chapter-shell [role="alert"] .alert-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: #185c4e;
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+}
+.chapter-shell [role="alert"] .alert-action:hover {
+  background: #123f36;
+}

@@ -24,10 +24,17 @@ export async function POST(request: Request) {
   }
   const cached = body.fresh ? null : await env.DB.prepare('SELECT content FROM adapted_chapters WHERE user_id = ? AND title = ? AND source_url = ? AND profile_hash = ? LIMIT 1').bind(user.userId, title, sourceUrl, hash).first<{ content: string }>();
   if (cached) return Response.json({ content: JSON.parse(cached.content), cached: true });
-  if (sourceUrl.startsWith('upload:')) {
-    return Response.json({ error: 'PDF 导入暂时暂停。请先从书库或搜索页选择公版名著生成改写。' }, { status: 400 });
-  }
   const payload = bytesToBase64Url(new TextEncoder().encode(JSON.stringify({ title, uid: user.userId, exp: Date.now() + 60 * 60_000 })));
   const token = `v1.${payload}.${await sign(payload, runtime.EDITOR_SECRET)}`;
+  if (sourceUrl.startsWith('upload:')) {
+    // 导入的书没有可抓取的来源地址：正文在导入时已由浏览器抽取并随书架行保存。
+    const row = await env.DB.prepare(
+      'SELECT title,extracted_text AS extractedText FROM shelf_books WHERE user_id = ? AND source_url = ? LIMIT 1',
+    )
+      .bind(user.userId, sourceUrl)
+      .first<{ title: string; extractedText: string | null }>();
+    if (!row?.extractedText) return Response.json({ error: '这本书没有可用的正文，请回到书架重新导入一次。' }, { status: 409 });
+    return Response.json({ editorUrl: runtime.EDITOR_URL, token, profile: normalizedProfile, sourceText: row.extractedText }, { status: 202 });
+  }
   return Response.json({ editorUrl: runtime.EDITOR_URL, token, profile: normalizedProfile }, { status: 202 });
 }

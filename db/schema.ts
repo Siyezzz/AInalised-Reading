@@ -19,6 +19,7 @@ export const shelfBooks = sqliteTable(
     sourceUrl: text('source_url'),
     fileKey: text('file_key'),
     contentType: text('content_type'),
+    extractedText: text('extracted_text'),
     size: integer('size').notNull().default(0),
     progress: integer('progress').notNull().default(0),
     status: text('status').notNull().default('已导入'),
