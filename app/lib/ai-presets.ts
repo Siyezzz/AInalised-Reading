@@ -86,10 +86,21 @@ export type LineTest = { ok: boolean; status?: number; model?: string; ms?: numb
  */
 export async function testAiLine(settings: AiSettings): Promise<LineTest> {
   try {
-    const response = await fetch('/api/ai-test', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(settings) });
-    const data = (await response.json()) as LineTest & { error?: string };
-    if (typeof data?.ok === 'boolean') return data;
-    return { ok: false, status: response.status, message: data?.error || '站点没有返回测试结果。' };
+    // 必须带一个 JSON body：空 body 的 POST 在这个运行时里会直接 500。
+    const ticket = await fetch('/api/ai-test', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    const data = (await ticket.json()) as { editorUrl?: string; title?: string; token?: string; message?: string };
+    if (!ticket.ok || !data.editorUrl || !data.token) {
+      return { ok: false, status: ticket.status, message: data.message || '站点没有返回测试票据。' };
+    }
+    const response = await fetch(data.editorUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${data.token}` },
+      body: JSON.stringify({ title: data.title, action: 'test-line', ...settings }),
+      signal: AbortSignal.timeout(45_000),
+    });
+    const result = (await response.json()) as LineTest;
+    if (typeof result?.ok === 'boolean') return result;
+    return { ok: false, status: response.status, message: '改写服务没有返回测试结果。' };
   } catch {
     return { ok: false, message: '网络不通，没能联系上站点。' };
   }

@@ -11,26 +11,15 @@ async function sign(payload: string, secret: string) {
 }
 
 /**
- * 「测试这条线路」：把读者填的 Base URL / 模型 / key 原样转发给 AI Worker 打一次最小请求。
- * 站点不保存 key，只做一次转发。要求登录，否则这个接口会变成任何人都能用的出网代理。
- * 票据的 title 必须与请求体的 title 一致，否则 AI Worker 会判 UNAUTHORIZED。
+ * 「测试这条线路」的取票口：只签一张短票据，真正的测试请求由浏览器直接打给 AI Worker。
+ * 之所以不在这里代发：同一个 zone 下让 Worker 去 fetch 另一个 Worker 会被 Cloudflare 拦下，
+ * 和 /api/adapt 保持同一种形状最稳。要求登录，否则这个接口就是给别人白用的出网通道。
  */
-export async function POST(request: Request) {
+export async function POST() {
   const user = await getChatGPTUser();
   if (!user) return Response.json({ ok: false, message: '请先登录，再测试线路。' }, { status: 401 });
   const runtime = env as RuntimeEnv;
   if (!runtime.EDITOR_URL || !runtime.EDITOR_SECRET) return Response.json({ ok: false, message: '生成服务尚未配置。' }, { status: 503 });
-  const body = await request.json() as Record<string, unknown>;
   const payload = bytesToBase64Url(new TextEncoder().encode(JSON.stringify({ title: TEST_TITLE, uid: user.userId, exp: Date.now() + 5 * 60_000 })));
-  const token = `v1.${payload}.${await sign(payload, runtime.EDITOR_SECRET)}`;
-  try {
-    const response = await fetch(runtime.EDITOR_URL, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-      body: JSON.stringify({ title: TEST_TITLE, action: 'test-line', ...body }),
-    });
-    return Response.json(await response.json(), { status: response.ok ? 200 : response.status });
-  } catch {
-    return Response.json({ ok: false, message: '没能联系上改写服务，请稍后再试。' }, { status: 502 });
-  }
+  return Response.json({ editorUrl: runtime.EDITOR_URL, title: TEST_TITLE, token: `v1.${payload}.${await sign(payload, runtime.EDITOR_SECRET)}` });
 }
