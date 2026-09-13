@@ -464,7 +464,7 @@
    固定在视口上，正文往下滚时会从它下面滑过，正好被挡住。
    改成纯图标的圆形按钮，宽度缩到约三分之一，并贴住右上角。 */
 .chapter-actions {
-  top: 74px;
+  top: 78px;
   right: 14px;
   gap: 6px;
   padding: 6px;
@@ -496,7 +496,8 @@
 }
 @media (max-width: 700px) {
   .chapter-actions {
-    top: 64px;
+    /* 顶栏 66px 是 sticky 的，别压到它上面 */
+    top: 78px;
     right: 10px;
     gap: 4px;
     padding: 5px;
