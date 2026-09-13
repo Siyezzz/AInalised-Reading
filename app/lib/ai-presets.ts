@@ -13,8 +13,8 @@ export type ApiPreset = {
  * 首次进入站点时的引导弹窗和 /profile 的「改写模型」区块共用这份清单。
  */
 export const apiPresets: ApiPreset[] = [
-  { id: 'tokenharbor', name: 'Token Harbor', baseUrl: 'https://tokenharbor.ai/v1', model: 'deepseek-v4.1-flash:free', note: '免费模型，国内可直连；实测 1～17 秒，速度有波动', keyUrl: 'https://tokenharbor.ai/dashboard', free: true },
-  { id: 'agnes', name: 'Agnes', baseUrl: 'https://apihub.agnes-ai.cn/v1', model: 'agnes-2.5-flash', note: '国内直连、当前免费；默认开思考模式，单次要 10～25 秒，整章会更慢', keyUrl: 'https://platform.agnes-ai.cn', free: true },
+  { id: 'agnes', name: 'Agnes', baseUrl: 'https://apihub.agnes-ai.cn/v1', model: 'agnes-2.5-flash', note: '国内直连、当前免费；实测最快，整章约 15 秒，推荐先用这条', keyUrl: 'https://platform.agnes-ai.cn', free: true },
+  { id: 'tokenharbor', name: 'Token Harbor', baseUrl: 'https://tokenharbor.ai/v1', model: 'deepseek-v4.1-flash:free', note: '免费模型，国内可直连；但有速率限制，实测整章要 90 秒以上，长章节容易超时，慢就换 Agnes', keyUrl: 'https://tokenharbor.ai/dashboard', free: true },
   { id: 'groq', name: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'qwen/qwen3.8-27b', note: '免费额度，速度最快，推荐先试', keyUrl: 'https://console.groq.com/keys', free: true },
   { id: 'gemini', name: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash', note: 'AI Studio 免费额度，性价比高', keyUrl: 'https://aistudio.google.com/apikey', free: true },
   { id: 'openrouter', name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'nex-agi/nex-n2.5-mini:free', note: '免费档每天只有 50 次请求，改写一章要 4～10 次，用几天就会用完；额度不够时建议换 Groq 或 Gemini', keyUrl: 'https://openrouter.ai/keys', free: true },

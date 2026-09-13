@@ -406,12 +406,16 @@ export async function generateAdaptedChapter(env: JobEnv, p: JobParams) {
   const models = new Set<string>();
   // 一次生成的总预算。读者的浏览器要一直挂着这个请求，所以必须有上限：
   // 超过就报错让他重试或换线路，而不是继续拼下去。
-  const deadline = Date.now() + 180_000;
+  // 上限对齐前端 reader.tsx 的 240 秒 fetch 超时，留 20 秒余量——超过去就是前端先断，
+  // 读者什么都收不到，比报错更糟。
+  const deadline = Date.now() + 220_000;
   const budget = (base: number) => Math.min(base, deadline - Date.now());
   try {
     // 实测：免费档模型整章一遍过约 27 秒（推理 token 占大头），但高峰期会翻倍。
     // 之前只给 55 秒，正常模型也常被判超时、被迫退回分段路径。
-    const fast = await rewriteWholeChapter(env, p, budget(90_000), models, deadline);
+    // 后来按 2400 字原文复测：Agnes 只要 15 秒，Token Harbor 免费模型要 94 秒——
+    // 90 秒的上限会把后者整段判死，所以抬到 120 秒。
+    const fast = await rewriteWholeChapter(env, p, budget(120_000), models, deadline);
     const illustration = await createIllustration(env, p.title, p.aiConfig, fast.imageCue.prompt);
     return { ...fast, image: illustration.image, source: p.sourceUrl, model: [...models].join(', '), imageModel: illustration.imageModel, parts: 1 };
   } catch (fastError) {
@@ -433,7 +437,7 @@ export async function generateAdaptedChapter(env: JobEnv, p: JobParams) {
             '固定模板：paragraphs 只放改写后的现代简体中文白话文，每段 90-190 字；summary 只记事实链。',
             '改写要求：只处理当前分段，保持原文事件顺序，写成可与前后段自然拼接的叙述。不能整段照抄原文，不能输出繁体字。',
             '输出 schema：{"paragraphs":["改写后的简体中文自然段"],"summary":"事件链事实摘要"}',
-          ].join('\n'), { title: p.title, profile: p.profile, part: i + 1, total: chunks.length, source }, p.aiConfig, fetch, budget(45_000), deadline);
+          ].join('\n'), { title: p.title, profile: p.profile, part: i + 1, total: chunks.length, source }, p.aiConfig, fetch, budget(60_000), deadline);
           const paragraphs = validateParagraphs(result.json.paragraphs);
           if (looksCopiedFromSource(paragraphs, source)) throw new Error('OUTPUT_TOO_CLOSE_TO_SOURCE');
           return { index: i, model: result.model, paragraphs, summary: typeof result.json.summary === 'string' ? toSimplifiedText(result.json.summary.slice(0, 400)) : '' };
