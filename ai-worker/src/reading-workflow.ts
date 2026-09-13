@@ -279,6 +279,26 @@ async function createIllustration(env: JobEnv, title: string, aiConfig: UserAiCo
   }
   return { image: fallbackSvg(title), imageModel: 'built-in-svg-fallback' };
 }
+/**
+ * 补抽「原文证据」。不少模型（尤其免费档）在整章改写时会漏掉 originalEvidence，
+ * normalizeEvidence 只会静默返回空数组，读者那边整块折叠证据就消失了。
+ * 这里单独补一次小请求；补不上也只是少一块证据，绝不能因此把已写好的正文判成失败。
+ */
+async function topUpEvidence(env: JobEnv, p: JobParams, adapted: string[], timeoutMs: number) {
+  if (!adapted.length) return [];
+  try {
+    const repair = await completeJsonResult(env, [
+      '任务：从本章原文里挑 2 条可核验的原文证据，用于对照已经写好的改写。',
+      '输入字段：source 是本章原文；adapted 是已经写好的改写段落。',
+      '要求：adapted 必须是改写里真实出现过的句子；original 必须是 source 里对应的原句，不超过 30 字或 20 个英文词；note 说明改写相对原文做了什么处理。',
+      '输出 schema：{"originalEvidence":[{"adapted":"...","original":"...","note":"..."}]}',
+    ].join('\n'), { source: p.sourceText, adapted }, p.aiConfig, fetch, timeoutMs);
+    return normalizeEvidence((repair.json as { originalEvidence?: unknown }).originalEvidence);
+  } catch (error) {
+    console.error(JSON.stringify({ event: 'evidence_topup_failed', error: error instanceof Error ? error.message : String(error) }));
+    return [];
+  }
+}
 async function rewriteWholeChapter(env: JobEnv, p: JobParams, timeoutMs: number, models: Set<string>) {
   const result = await completeJsonResult(env, [
         '任务：把这整章原文一次性改写成适合读者的完整章节。',
@@ -293,6 +313,10 @@ async function rewriteWholeChapter(env: JobEnv, p: JobParams, timeoutMs: number,
   const content = simplifyValue({ chapterTitle: x.chapterTitle, chapter: validateParagraphs(x.chapter), originalEvidence: normalizeEvidence(x.originalEvidence), quiz: validateQuiz(x.quiz), imageCue: validateImageCue(x.imageCue) });
   if (looksCopiedFromSource(content.chapter, p.sourceText)) throw new Error('OUTPUT_TOO_CLOSE_TO_SOURCE');
   models.add(result.model);
+  if (!content.originalEvidence.length) {
+    const evidence = await topUpEvidence(env, p, content.chapter, timeoutMs);
+    if (evidence.length) content.originalEvidence = evidence;
+  }
   return content;
 }
 export class ReadingWorkflow extends WorkflowEntrypoint<JobEnv, JobParams> {
@@ -314,7 +338,9 @@ export async function generateAdaptedChapter(env: JobEnv, p: JobParams) {
   }
   const models = new Set<string>();
   try {
-    const fast = await rewriteWholeChapter(env, p, 12_000, models);
+    // 12 秒对绝大多数模型都不够（免费档整章改写通常要 20-40 秒），会让单遍改写
+    // 必然超时、退回分段路径，而分段路径不产出原文证据。给足时间，让正常模型一遍过。
+    const fast = await rewriteWholeChapter(env, p, 55_000, models);
     const illustration = await createIllustration(env, p.title, p.aiConfig, fast.imageCue.prompt);
     return { ...fast, image: illustration.image, source: p.sourceUrl, model: [...models].join(', '), imageModel: illustration.imageModel, parts: 1 };
   } catch (fastError) {
@@ -362,7 +388,7 @@ export async function generateAdaptedChapter(env: JobEnv, p: JobParams) {
       '题目要求：一个最佳答案和三个有迷惑性的错误答案，错误答案必须可解释。',
       '插图要求：imageCue.prompt 只能描述一个具体关键场景，并使用 elegant Chinese classic picture-book illustration, warm ink wash and mineral pigment colors, delicate linework, clear characters, clear action, no text。',
       '输出 schema：{"chapterTitle":"标题","quiz":{"question":"推理题","options":["A","B","C","D"],"correctIndex":0,"rightFeedback":"解析","wrongFeedback":["A解析","B解析","C解析","D解析"]},"imageCue":{"prompt":"English description of one accurate illustrated scene, elegant Chinese classic picture-book illustration, warm ink wash and mineral pigment colors, clear characters and action, no text","afterParagraph":3}}',
-    ].join('\n'), { title: p.title, profile: p.profile, events: summaries }, p.aiConfig, fetch, 10_000);
+    ].join('\n'), { title: p.title, profile: p.profile, events: summaries }, p.aiConfig, fetch, 30_000);
     const x = result.json; models.add(result.model);
     if (typeof x.chapterTitle !== 'string') throw new Error('INVALID_METADATA');
     metadata = simplifyValue({ chapterTitle: x.chapterTitle, quiz: validateQuiz(x.quiz), imageCue: validateImageCue(x.imageCue) });
@@ -372,5 +398,7 @@ export async function generateAdaptedChapter(env: JobEnv, p: JobParams) {
     metadata = fallbackMetadata(p.title, summaries, p.sourceText);
   }
   const illustration = await createIllustration(env, p.title, p.aiConfig, metadata.imageCue.prompt);
-  return { ...metadata, chapter: simplifyValue(chapter), image: illustration.image, source: p.sourceUrl, model: [...models].join(', ') || 'unknown', imageModel: illustration.imageModel, parts: chunks.length };
+  // 分段路径原来完全不产出原文证据，读者在降级情况下会少掉整块折叠证据。这里补上。
+  const evidence = await topUpEvidence(env, p, chapter, 25_000);
+  return { ...metadata, chapter: simplifyValue(chapter), originalEvidence: evidence, image: illustration.image, source: p.sourceUrl, model: [...models].join(', ') || 'unknown', imageModel: illustration.imageModel, parts: chunks.length };
 }

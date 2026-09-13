@@ -15,7 +15,7 @@ export type ApiPreset = {
 export const apiPresets: ApiPreset[] = [
   { id: 'groq', name: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'qwen/qwen3.8-27b', note: '免费额度，速度最快，推荐先试', keyUrl: 'https://console.groq.com/keys', free: true },
   { id: 'gemini', name: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash', note: 'AI Studio 免费额度，性价比高', keyUrl: 'https://aistudio.google.com/apikey', free: true },
-  { id: 'openrouter', name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'deepseek/deepseek-chat-v3.1:free', note: '带 :free 后缀的模型可免费调用', keyUrl: 'https://openrouter.ai/keys', free: true },
+  { id: 'openrouter', name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'nex-agi/nex-n2.5-mini:free', note: '实测可用的免费模型，填 key 即可改写；若被下架可换成 nex-agi/nex-n2.5-pro:free', keyUrl: 'https://openrouter.ai/keys', free: true },
   { id: 'siliconflow', name: '硅基流动', baseUrl: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen2.5-72B-Instruct', note: '国内网络直连，注册送额度', keyUrl: 'https://cloud.siliconflow.cn/account/ak', free: true },
   { id: 'deepseek', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', note: '便宜，中文和长文本成本低', keyUrl: 'https://platform.deepseek.com/api_keys' },
   { id: 'moonshot', name: 'Moonshot Kimi', baseUrl: 'https://api.moonshot.cn/v1', model: 'kimi-k2-0711-preview', note: '中文长文本可试', keyUrl: 'https://platform.moonshot.cn/console/api-keys' },
