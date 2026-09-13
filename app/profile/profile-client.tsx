@@ -226,7 +226,7 @@ export default function ProfileClient({ email }: { email: string }) {
             </label>
             <label>
               API key
-              <input type="password" value={apiKey} onChange={(event) => { setApiKey(event.target.value); setModelSaved(false); setModelError(''); }} placeholder="sk-..." autoComplete="off" />
+              <input type="password" value={apiKey} onChange={(event) => { setApiKey(event.target.value); setModelSaved(false); setModelError(''); }} placeholder="粘贴服务商给的 key" autoComplete="off" />
             </label>
             <label>
               插图模型（可选）

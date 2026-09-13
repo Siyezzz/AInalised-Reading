@@ -11,7 +11,7 @@ import { AI_SETUP_DONE_KEY, OPEN_AI_SETUP, apiPresets, describeLineTest, readAiS
  */
 export default function AiSetup() {
   const [open, setOpen] = useState(false);
-  const [presetId, setPresetId] = useState('groq');
+  const [presetId, setPresetId] = useState(apiPresets[0].id);
   const [apiBaseUrl, setApiBaseUrl] = useState(apiPresets[0].baseUrl);
   const [apiModel, setApiModel] = useState(apiPresets[0].model);
   const [apiKey, setApiKey] = useState('');

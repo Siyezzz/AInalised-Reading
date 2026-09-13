@@ -42,9 +42,16 @@ function parseModelJson(value: string): unknown {
 function readQuota(response: Response) {
   const limit = Number(response.headers.get('x-ratelimit-limit'));
   const remaining = Number(response.headers.get('x-ratelimit-remaining'));
-  if (!Number.isFinite(limit) || !Number.isFinite(remaining)) return undefined;
-  const reset = Number(response.headers.get('x-ratelimit-reset'));
-  return { limit, remaining, resetAt: Number.isFinite(reset) ? reset : undefined };
+  if (Number.isFinite(limit) && Number.isFinite(remaining)) {
+    const reset = Number(response.headers.get('x-ratelimit-reset'));
+    return { limit, remaining, resetAt: Number.isFinite(reset) ? reset : undefined };
+  }
+  // Token Harbor 报的不是次数，而是「免费额度用了百分之几」加一个重置时间。
+  const usedPct = Number(response.headers.get('x-th-free-used-pct'));
+  if (Number.isFinite(usedPct)) {
+    return { limit: 100, remaining: Math.max(0, 100 - usedPct), usedPct, resetsAt: response.headers.get('x-th-free-resets') || undefined };
+  }
+  return undefined;
 }
 
 function assertChapterShape(value: unknown) {
@@ -79,18 +86,22 @@ export default {
           const r = await fetch(`${aiConfig.baseUrl}/chat/completions`, {
             method: 'POST',
             headers: { authorization: `Bearer ${aiConfig.apiKey}`, 'content-type': 'application/json' },
-            body: JSON.stringify({ model: aiConfig.model, messages: [{ role: 'user', content: '只回复两个字：可用' }], max_tokens: 16 }),
-            signal: AbortSignal.timeout(30_000),
+            // max_tokens 必须给够：Agnes 这类模型默认先「想」再答，16 个 token 会被思考全吃掉，
+            // 正文一直是空的，读者看到「返回『』」会以为线路坏了。512 够它想完还有余量出正文。
+            body: JSON.stringify({ model: aiConfig.model, messages: [{ role: 'user', content: '只回复两个字：可用' }], max_tokens: 512 }),
+            // 思考型模型单次就要 10～25 秒，30 秒会擦边超时，把一条好线路误报成「网络不通」。
+            signal: AbortSignal.timeout(60_000),
           });
           // OpenRouter 这类服务商把免费额度写在响应头上。一次小请求只能证明「线路通」，
           // 不能证明「改写一章够用」——所以把剩余额度一起带回去，读者才知道还能跑几章。
           const quota = readQuota(r);
           if (!r.ok) return json({ ok: false, status: r.status, model: aiConfig.model, message: await upstreamMessage(r), quota }, 200, request);
           const data = await r.json() as { choices?: { message?: { content?: string } }[] };
-          return json({ ok: true, status: r.status, model: aiConfig.model, ms: Date.now() - started, reply: (data.choices?.[0]?.message?.content || '').trim().slice(0, 40), quota }, 200, request);
+          const reply = (data.choices?.[0]?.message?.content || '').trim().slice(0, 40);
+          return json({ ok: true, status: r.status, model: aiConfig.model, ms: Date.now() - started, reply: reply || '（模型先思考再作答，这次没轮到正文，但线路是通的）', quota }, 200, request);
         } catch (testError) {
           const message = testError instanceof Error ? testError.message : String(testError);
-          return json({ ok: false, status: 0, model: aiConfig.model, message: /abort|timeout/i.test(message) ? '30 秒内没有响应，可能是网络不通或模型太慢。' : message.slice(0, 200) }, 200, request);
+          return json({ ok: false, status: 0, model: aiConfig.model, message: /abort|timeout/i.test(message) ? '60 秒内没有响应，可能是网络不通或模型太慢。' : message.slice(0, 200) }, 200, request);
         }
       }
       if (body.action === 'start-job' || body.action === 'job-status') {

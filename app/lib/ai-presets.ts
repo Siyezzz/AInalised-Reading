@@ -13,6 +13,8 @@ export type ApiPreset = {
  * 首次进入站点时的引导弹窗和 /profile 的「改写模型」区块共用这份清单。
  */
 export const apiPresets: ApiPreset[] = [
+  { id: 'tokenharbor', name: 'Token Harbor', baseUrl: 'https://tokenharbor.ai/v1', model: 'deepseek-v4.1-flash:free', note: '免费模型，国内可直连；实测 1～17 秒，速度有波动', keyUrl: 'https://tokenharbor.ai/dashboard', free: true },
+  { id: 'agnes', name: 'Agnes', baseUrl: 'https://apihub.agnes-ai.cn/v1', model: 'agnes-2.5-flash', note: '国内直连、当前免费；默认开思考模式，单次要 10～25 秒，整章会更慢', keyUrl: 'https://platform.agnes-ai.cn', free: true },
   { id: 'groq', name: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'qwen/qwen3.8-27b', note: '免费额度，速度最快，推荐先试', keyUrl: 'https://console.groq.com/keys', free: true },
   { id: 'gemini', name: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash', note: 'AI Studio 免费额度，性价比高', keyUrl: 'https://aistudio.google.com/apikey', free: true },
   { id: 'openrouter', name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'nex-agi/nex-n2.5-mini:free', note: '免费档每天只有 50 次请求，改写一章要 4～10 次，用几天就会用完；额度不够时建议换 Groq 或 Gemini', keyUrl: 'https://openrouter.ai/keys', free: true },
@@ -77,7 +79,16 @@ export function hasUsableAiSettings(settings = readAiSettings()) {
   return settings.aiProvider === 'openai-compatible' && Boolean(settings.apiBaseUrl && settings.apiModel && settings.apiKey);
 }
 
-export type LineTest = { ok: boolean; status?: number; model?: string; ms?: number; reply?: string; message?: string; quota?: { limit: number; remaining: number; resetAt?: number } };
+export type LineTest = {
+  ok: boolean;
+  status?: number;
+  model?: string;
+  ms?: number;
+  reply?: string;
+  message?: string;
+  /** 两家的口径不一样：OpenRouter 报「还剩几次」，Token Harbor 报「已用百分之几」。 */
+  quota?: { limit: number; remaining: number; resetAt?: number; usedPct?: number; resetsAt?: string };
+};
 
 /**
  * 让站点替读者打一次最小请求。
@@ -106,13 +117,23 @@ export async function testAiLine(settings: AiSettings): Promise<LineTest> {
   }
 }
 
+/** 把上游报的额度翻译成一句人话。读不到就不提，别编数字。 */
+function describeQuota(quota?: LineTest['quota']) {
+  if (!quota) return '';
+  if (typeof quota.usedPct === 'number') {
+    const reset = quota.resetsAt ? `，${quota.resetsAt.slice(0, 10)} 重置` : '';
+    return `（免费额度已用 ${quota.usedPct}%${reset}；改写一章大约要 4～10 次请求）`;
+  }
+  return `（今日免费额度还剩 ${quota.remaining}/${quota.limit} 次；改写一章大约要 4～10 次请求）`;
+}
+
 /** 把一次线路测试的结果说成一句人话。 */
 export function describeLineTest(result: LineTest) {
   // 免费额度必须一起报出来：一次小请求能过，不代表还够跑完一章。
   // 之前读者看到「可用」就去改写了，结果写一半额度用光，页面只说「改写失败」。
-  const quota = result.quota ? `今日免费额度还剩 ${result.quota.remaining}/${result.quota.limit} 次` : '';
+  const quota = describeQuota(result.quota);
   if (result.ok) {
-    return `线路可用：${result.model} 在 ${result.ms ?? '-'}ms 内返回「${result.reply || '正常'}」${quota ? `（${quota}；改写一章大约要 4～10 次）` : ''}`;
+    return `线路可用：${result.model} 在 ${result.ms ?? '-'}ms 内返回「${result.reply || '正常'}」${quota}`;
   }
-  return `线路不可用${result.status ? `（HTTP ${result.status}）` : ''}：${result.message || '未知原因'}${quota ? `（${quota}）` : ''}`;
+  return `线路不可用${result.status ? `（HTTP ${result.status}）` : ''}：${result.message || '未知原因'}${quota}`;
 }
