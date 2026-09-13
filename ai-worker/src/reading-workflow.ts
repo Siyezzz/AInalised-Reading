@@ -413,9 +413,11 @@ export async function generateAdaptedChapter(env: JobEnv, p: JobParams) {
   try {
     // 实测：免费档模型整章一遍过约 27 秒（推理 token 占大头），但高峰期会翻倍。
     // 之前只给 55 秒，正常模型也常被判超时、被迫退回分段路径。
-    // 后来按 2400 字原文复测：Agnes 只要 15 秒，Token Harbor 免费模型要 94 秒——
-    // 90 秒的上限会把后者整段判死，所以抬到 120 秒。
-    const fast = await rewriteWholeChapter(env, p, budget(120_000), models, deadline);
+    // 再按 1895 字《红楼梦》原文用站点真实提示词复测：
+    //   Agnes 18.9 秒（输出 2229 token）；Token Harbor 免费模型 118.3 秒
+    //   （输出 10299 token，绝大部分是反复推理）。
+    // 120 秒的上限对后者只剩 1.7 秒余量，等于每章都在赌，所以抬到 150 秒。
+    const fast = await rewriteWholeChapter(env, p, budget(150_000), models, deadline);
     const illustration = await createIllustration(env, p.title, p.aiConfig, fast.imageCue.prompt);
     return { ...fast, image: illustration.image, source: p.sourceUrl, model: [...models].join(', '), imageModel: illustration.imageModel, parts: 1 };
   } catch (fastError) {

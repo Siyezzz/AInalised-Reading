@@ -13,13 +13,14 @@ export type ApiPreset = {
  * 首次进入站点时的引导弹窗和 /profile 的「改写模型」区块共用这份清单。
  */
 export const apiPresets: ApiPreset[] = [
-  { id: 'agnes', name: 'Agnes', baseUrl: 'https://apihub.agnes-ai.cn/v1', model: 'agnes-2.5-flash', note: '国内直连、当前免费；实测最快，整章约 15 秒，推荐先用这条', keyUrl: 'https://platform.agnes-ai.cn', free: true },
-  { id: 'tokenharbor', name: 'Token Harbor', baseUrl: 'https://tokenharbor.ai/v1', model: 'deepseek-v4.1-flash:free', note: '免费模型，国内可直连；但有速率限制，实测整章要 90 秒以上，长章节容易超时，慢就换 Agnes', keyUrl: 'https://tokenharbor.ai/dashboard', free: true },
-  { id: 'groq', name: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'qwen/qwen3.8-27b', note: '免费额度，速度最快，推荐先试', keyUrl: 'https://console.groq.com/keys', free: true },
-  { id: 'gemini', name: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash', note: 'AI Studio 免费额度，性价比高', keyUrl: 'https://aistudio.google.com/apikey', free: true },
+  { id: 'agnes', name: 'Agnes', baseUrl: 'https://apihub.agnes-ai.cn/v1', model: 'agnes-2.5-flash', note: '国内直连、当前免费；实测整章 18.9 秒（约 4800 token），两条里最快，推荐先用这条', keyUrl: 'https://platform.agnes-ai.cn', free: true },
+  { id: 'zhipu', name: '智谱 GLM', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash', note: '国内直连，GLM-4-Flash 免费，新用户另有 2000 万 token；免费额度最大的一条', keyUrl: 'https://open.bigmodel.cn/usercenter/apikeys', free: true },
+  { id: 'tokenharbor', name: 'Token Harbor', baseUrl: 'https://tokenharbor.ai/v1', model: 'deepseek-v4.1-flash:free', note: '免费模型，国内可直连；但被限速，实测整章要 118 秒（且多烧 1 万 token），只适合短章节，慢就换 Agnes', keyUrl: 'https://tokenharbor.ai/dashboard', free: true },
+  { id: 'gemini', name: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash', note: '免费层每天 1440 次请求，改写一章只要 4～10 次，基本用不完；国内需要自备网络', keyUrl: 'https://aistudio.google.com/apikey', free: true },
+  { id: 'groq', name: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'qwen/qwen3.8-27b', note: '免费额度，速度极快，推荐先试', keyUrl: 'https://console.groq.com/keys', free: true },
   { id: 'openrouter', name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'nex-agi/nex-n2.5-mini:free', note: '免费档每天只有 50 次请求，改写一章要 4～10 次，用几天就会用完；额度不够时建议换 Groq 或 Gemini', keyUrl: 'https://openrouter.ai/keys', free: true },
-  { id: 'siliconflow', name: '硅基流动', baseUrl: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen2.5-72B-Instruct', note: '国内网络直连，注册送额度', keyUrl: 'https://cloud.siliconflow.cn/account/ak', free: true },
-  { id: 'deepseek', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', note: '便宜，中文和长文本成本低', keyUrl: 'https://platform.deepseek.com/api_keys' },
+  { id: 'siliconflow', name: '硅基流动', baseUrl: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen2.5-7B-Instruct', note: '国内直连，9B 以下模型永久免费、新用户送 2000 万 token；小模型改写质量有限，长章节可换付费模型', keyUrl: 'https://cloud.siliconflow.cn/account/ak', free: true },
+  { id: 'deepseek', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', note: '没有免费额度但最便宜：改写一章约 5 千 token，成本约 1 分钱，中文长文本质量好', keyUrl: 'https://platform.deepseek.com/api_keys' },
   { id: 'moonshot', name: 'Moonshot Kimi', baseUrl: 'https://api.moonshot.cn/v1', model: 'kimi-k2-0711-preview', note: '中文长文本可试', keyUrl: 'https://platform.moonshot.cn/console/api-keys' },
   { id: 'openai', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4.1-mini', note: '稳定，通常需要付费余额', keyUrl: 'https://platform.openai.com/api-keys' },
   { id: 'together', name: 'Together AI', baseUrl: 'https://api.together.xyz/v1', model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', note: '常见开源大模型接口', keyUrl: 'https://api.together.xyz/settings/api-keys' },

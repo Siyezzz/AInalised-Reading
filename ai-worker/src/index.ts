@@ -40,15 +40,24 @@ function parseModelJson(value: string): unknown {
 
 /** 从上游响应头里读出「今天还剩多少次免费请求」。读不到就返回 undefined，不要编数字。 */
 function readQuota(response: Response) {
-  const limit = Number(response.headers.get('x-ratelimit-limit'));
-  const remaining = Number(response.headers.get('x-ratelimit-remaining'));
-  if (Number.isFinite(limit) && Number.isFinite(remaining)) {
-    const reset = Number(response.headers.get('x-ratelimit-reset'));
-    return { limit, remaining, resetAt: Number.isFinite(reset) ? reset : undefined };
+  // 必须先判 null 再转数字：Token Harbor 根本不返回 x-ratelimit-* 这几个头，
+  // 而 Number(null) 是 0，会被当成「额度 0，还剩 0 次」报给读者，
+  // 明明还剩 99%，却显示成「今日免费额度还剩 0/0 次」。
+  const limitRaw = response.headers.get('x-ratelimit-limit');
+  const remainingRaw = response.headers.get('x-ratelimit-remaining');
+  if (limitRaw !== null && remainingRaw !== null) {
+    const limit = Number(limitRaw);
+    const remaining = Number(remainingRaw);
+    if (Number.isFinite(limit) && Number.isFinite(remaining) && limit > 0) {
+      const resetRaw = response.headers.get('x-ratelimit-reset');
+      const reset = Number(resetRaw);
+      return { limit, remaining, resetAt: resetRaw !== null && Number.isFinite(reset) ? reset : undefined };
+    }
   }
   // Token Harbor 报的不是次数，而是「免费额度用了百分之几」加一个重置时间。
-  const usedPct = Number(response.headers.get('x-th-free-used-pct'));
-  if (Number.isFinite(usedPct)) {
+  const usedRaw = response.headers.get('x-th-free-used-pct');
+  const usedPct = Number(usedRaw);
+  if (usedRaw !== null && Number.isFinite(usedPct)) {
     return { limit: 100, remaining: Math.max(0, 100 - usedPct), usedPct, resetsAt: response.headers.get('x-th-free-resets') || undefined };
   }
   return undefined;
