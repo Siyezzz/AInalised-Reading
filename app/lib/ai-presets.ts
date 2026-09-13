@@ -14,6 +14,7 @@ export type ApiPreset = {
  */
 export const apiPresets: ApiPreset[] = [
   { id: 'agnes', name: 'Agnes', baseUrl: 'https://apihub.agnes-ai.cn/v1', model: 'agnes-2.5-flash', note: '国内直连、当前免费；实测整章 18.9 秒（约 4800 token），两条里最快，推荐先用这条', keyUrl: 'https://platform.agnes-ai.cn', free: true },
+  { id: 'qwen', name: '通义千问（阿里云百炼）', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-flash', note: '付费首选：国内直连，实测整章 24 秒、4800 token，每章约 0.4 分钱，比 DeepSeek 还便宜；想更好质量把 Model 改成 qwen3.8-flash（但那是思考型模型，会慢很多）', keyUrl: 'https://bailian.console.aliyun.com/' },
   { id: 'zhipu', name: '智谱 GLM', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash', note: '国内直连，GLM-4-Flash 免费，新用户另有 2000 万 token；免费额度最大的一条', keyUrl: 'https://open.bigmodel.cn/usercenter/apikeys', free: true },
   { id: 'tokenharbor', name: 'Token Harbor', baseUrl: 'https://tokenharbor.ai/v1', model: 'deepseek-v4.1-flash:free', note: '免费模型，国内可直连；但被限速，实测整章要 118 秒（且多烧 1 万 token），只适合短章节，慢就换 Agnes', keyUrl: 'https://tokenharbor.ai/dashboard', free: true },
   { id: 'gemini', name: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash', note: '免费层每天 1440 次请求，改写一章只要 4～10 次，基本用不完；国内需要自备网络', keyUrl: 'https://aistudio.google.com/apikey', free: true },
