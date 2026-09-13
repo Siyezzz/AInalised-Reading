@@ -18,6 +18,12 @@ const KEY_ISSUE_PATTERN = /USER_KEY_REQUIRED|USER_MODEL_QUOTA|USER_MODEL_CONFIG_
  * 之前只显示「请检查 Base URL、模型名和 key」，读者会一直以为是 key 填错了，重复重试同一条坏线路。
  */
 const LINE_ISSUE_PATTERN = /USER_MODEL_FAILED|USER_MODEL_HTTP_|USER_MODEL_EMPTY|MODEL_TIMEOUT|调用你自己的 API 线路/;
+/**
+ * 免费额度是按天重置的。这种情况今天再点「重试」永远不会成功，
+ * 所以不能跟其他错误共用一套按钮——要直接告诉读者今天别再试了，去换线路。
+ * 之前它被当成「线路调用失败」，读者看到「模型可能已被下架」，越查越远。
+ */
+const DAILY_QUOTA_PATTERN = /USER_MODEL_QUOTA_DAILY|free-models-per-day|per-day|每日免费额度|当天额度/;
 function validChapter(x: Chapter) { return x && typeof x.chapterTitle === 'string' && Array.isArray(x.chapter) && x.chapter.length >= 4 && x.chapter.every(p => typeof p === 'string' && p.trim()) && x.quiz && typeof x.quiz.question === 'string' && x.quiz.options?.length === 4 && x.quiz.options.every(o => typeof o === 'string') && Number.isInteger(x.quiz.correctIndex) && x.quiz.correctIndex >= 0 && x.quiz.correctIndex < 4 && x.quiz.wrongFeedback?.length === 4; }
 export default function AdaptReader() {
   const params = useSearchParams(), title = params.get('title') || '', source = params.get('source') || '';
@@ -30,6 +36,8 @@ export default function AdaptReader() {
   const [keyIssue, setKeyIssue] = useState(false);
   // 线路本身打不通（模型下架 / Base URL 错 / 上游 5xx）：重试前先让读者看到用的是哪条线路。
   const [lineIssue, setLineIssue] = useState(false);
+  // 免费额度今天已用完：重试按钮要给对，不然读者会一直点一个注定失败的按钮。
+  const [dailyQuota, setDailyQuota] = useState(false);
   const [line, setLine] = useState('');
   const ticket = useRef<Ticket | null>(null), working = useRef(false), autoStarted = useRef('');
   const [jobId, setJobId] = useState<string | null>(null);
@@ -47,6 +55,7 @@ export default function AdaptReader() {
       const text = [x.error, x.message, x.detail].filter(Boolean).join(' ');
       setKeyIssue(KEY_ISSUE_PATTERN.test(text));
       setLineIssue(LINE_ISSUE_PATTERN.test(text));
+      setDailyQuota(DAILY_QUOTA_PATTERN.test(text));
       const settings = readAiSettings();
       setLine(settings.apiModel ? `${settings.apiModel} @ ${settings.apiBaseUrl}` : '未配置');
       throw new Error([x.message || x.error || '服务请求失败', x.detail].filter(Boolean).join('：'));
@@ -95,6 +104,7 @@ export default function AdaptReader() {
       setError('');
       setKeyIssue(false);
       setLineIssue(false);
+      setDailyQuota(false);
       setNotice('');
       setAttempt((x) => x + 1);                 // 走一遍完整流程：重取票据 → 取原文 → 自动改写
     };
@@ -165,9 +175,15 @@ export default function AdaptReader() {
     void generate();
   }, [prepared, chapter, jobId, busy, error, storageKey]);
   async function addToShelf() {
-    if (source.startsWith('upload:')) { setShelfState('saved'); return; }
+    // 操作条已经是图标按钮了，点完必须给一句文字反馈，否则读者不知道有没有成功。
+    if (source.startsWith('upload:')) { setShelfState('saved'); setNotice(`《${title}》在书架里。`); return; }
     setShelfState('saving');
-    try { const r = await fetch('/api/library', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title, sourceUrl: original }) }); if (!r.ok) throw new Error(); setShelfState('saved'); }
+    try {
+      const r = await fetch('/api/library', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title, sourceUrl: original }) });
+      if (!r.ok) throw new Error();
+      setShelfState('saved');
+      setNotice(`《${title}》已加入书架，可以在书架里继续读。`);
+    }
     catch { setShelfState('error'); }
   }
   function chapterMarkdown(c: Chapter) {
@@ -206,12 +222,15 @@ export default function AdaptReader() {
   const original = chapter?.source || prepared?.url || source;
   return <article className="chapter-shell"><header className="chapter-intro"><a href="/shelf">返回书架</a><span>《{title}》第 {chapterNumber} 章</span><h1>{chapter?.chapterTitle || prepared?.title || '准备你的阅读版本'}</h1></header>
     {(busy || (!chapter && prepared)) && <div className="adapt-progress" role="status"><strong>{label}</strong><small>{progress}%</small><i><b style={{width: `${progress}%`}} /></i></div>}
-    {error && <div role="alert"><p>{error}</p>{keyIssue
-      ? <><button className="alert-action" onClick={openKeySetup}>填写 API key</button> <a href="/profile">去阅读画像设置</a></>
-      : lineIssue
-        ? <>{!busy && <button onClick={retry}>重试失败步骤</button>}<button className="alert-action" onClick={openKeySetup}>换一条线路</button> <a href="/profile">去阅读画像设置</a></>
-        : !busy && <><button onClick={retry}>重试失败步骤</button> <a href="/profile">检查 AI 线路设置</a></>}
-      {lineIssue && <small className="alert-line">当前线路：{line}。模型可能已被服务商下架，换一个模型名或点「换一条线路」重新选。</small>}</div>}
+    {error && <div role="alert"><p>{error}</p>{dailyQuota
+      ? <><button className="alert-action" onClick={openKeySetup}>换一条线路</button> <a href="/profile">去阅读画像设置</a></>
+      : keyIssue
+        ? <><button className="alert-action" onClick={openKeySetup}>填写 API key</button> <a href="/profile">去阅读画像设置</a></>
+        : lineIssue
+          ? <>{!busy && <button onClick={retry}>重试失败步骤</button>}<button className="alert-action" onClick={openKeySetup}>换一条线路</button> <a href="/profile">去阅读画像设置</a></>
+          : !busy && <><button onClick={retry}>重试失败步骤</button> <a href="/profile">检查 AI 线路设置</a></>}
+      {dailyQuota && <small className="alert-line">免费额度每天才重置一次，今天再点重试也不会成功。到「阅读画像」把服务商换成 Groq 或 Google Gemini 就好，那边的免费额度宽松得多。</small>}
+      {lineIssue && !dailyQuota && <small className="alert-line">当前线路：{line}。模型可能已被服务商下架，换一个模型名或点「换一条线路」重新选。</small>}</div>}
     {notice && <p role="status">{notice}</p>}
     {prepared && !chapter && !busy && <section className="adapt-ready"><div><span>原文已就绪</span><h2>{prepared.title}</h2><p>已识别第 {chapterNumber} 章，共 {prepared.text.length.toLocaleString()} 字符。系统正在自动开始改写和配图，无需再操作。</p></div><details><summary>查看提取的第 {chapterNumber} 章原文</summary><pre>{prepared.text}</pre></details></section>}
     {chapter && <ChapterTemplate chapter={chapter} title={title} sourceUrl={source} chapterNumber={chapterNumber} shelfState={shelfState} answer={answer} chapterFeedback={chapterFeedback} busy={busy} onAddToShelf={addToShelf} onDownload={() => download(chapterMarkdown(chapter), `${title}-第${chapterNumber}章.md`)} onAnswer={setAnswer} onFeedback={(item) => { setChapterFeedback(item); localStorage.setItem(`reading-feedback:${title}:${source}:${chapterNumber}`, item); }} onIllustrate={() => { setBusy(true); illustrate(chapter).catch(e => setError(String(e))).finally(() => setBusy(false)); }} />}

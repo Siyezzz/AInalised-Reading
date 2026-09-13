@@ -69,15 +69,18 @@ function fallbackModels(baseUrl: string, current: string) {
 /** 上游的报错正文（OpenRouter 会把真正原因写在 error.message 里）——原样带给读者，别再吞掉。 */
 export async function upstreamMessage(response: Response) {
   try {
-    const text = (await response.text()).slice(0, 400);
+    // 必须先整段读、再 JSON.parse 再截断。以前是「先 slice(0,400) 再 parse」，
+    // 稍长一点的报错体一律解析失败，读者看到的是半截 {"error":{"message":... ，
+    // 而不是真正的原因（比如 Rate limit exceeded: free-models-per-day）。
+    const raw = await response.text();
     try {
-      const data = JSON.parse(text) as { error?: { message?: string } | string; message?: string };
+      const data = JSON.parse(raw) as { error?: { message?: string } | string; message?: string };
       const message = typeof data.error === 'string' ? data.error : data.error?.message || data.message;
       if (message) return String(message).slice(0, 240);
     } catch {
       /* 不是 json 就退回纯文本 */
     }
-    return text.replace(/\s+/g, ' ').trim().slice(0, 240);
+    return raw.replace(/\s+/g, ' ').trim().slice(0, 240);
   } catch {
     return '';
   }
@@ -128,8 +131,16 @@ async function completeOpenAICompatibleJson(config: UserAiConfig, instruction: s
       continue;
     }
     const detail = await upstreamMessage(r);
+    // 429 必须分两种报：每分钟的突发限流等一下就能过，每天免费额度用完今天再试也没用。
+    // 以前两种都被压成「线路调用失败」，读者以为是自己 key 或模型名写错了，一直在原地重试。
+    if (r.status === 429) {
+      const daily = /per-day|per day|daily|free-models-per-day|每日|当天/i.test(detail);
+      failure = `${daily ? 'USER_MODEL_QUOTA_DAILY' : 'USER_MODEL_QUOTA'}${detail ? `：${detail}` : ''}`;
+      console.error(JSON.stringify({ event: 'user_model_quota', kind: daily ? 'daily' : 'burst', model }));
+      break;
+    }
     failure = `USER_MODEL_HTTP_${r.status}${detail ? `：${detail}` : ''}`;
-    // 只有「模型不存在」值得换一个再试；钥匙错、被限流、上游 5xx 换模型没用。
+    // 只有「模型不存在」值得换一个再试；钥匙错、上游 5xx 换模型没用。
     if (!isModelError(r.status, detail)) break;
     console.error(JSON.stringify({ event: 'user_model_fallback', from: model, status: r.status }));
   }
@@ -222,7 +233,42 @@ export function fallbackSvg(title: string) {
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return `data:image/svg+xml;base64,${btoa(binary)}`;
 }
-export function validateParagraphs(x: unknown): string[] { if (!Array.isArray(x) || !x.length || !x.every(p => typeof p === 'string' && p.trim())) throw new Error('INVALID_PARAGRAPHS'); return x.map((p) => toSimplifiedText(String(p).trim())); }
+/** 模型把整章写成一坨时，按句末切回自然段——前端要求至少 4 段才算完整。 */
+function splitRunawayParagraph(text: string) {
+  if (text.length <= 320) return [text];
+  const sentences = text.match(/[^。！？!?]+[。！？!?]?/g) || [text];
+  const out: string[] = [];
+  let current = '';
+  for (const sentence of sentences) {
+    if (current && current.length + sentence.length > 220) { out.push(current); current = ''; }
+    current += sentence;
+  }
+  if (current) out.push(current);
+  return out;
+}
+/**
+ * 免费档模型经常把 paragraphs 写成字符串、对象数组，或者整章挤成一段。
+ * 严格校验会把一次本来能用的结果直接判死，读者只看到「改写未完成，请重试」，
+ * 然后重试又要再花掉一次免费额度。所以这里先把能救的形状都救回来。
+ */
+export function validateParagraphs(x: unknown): string[] {
+  const raw: unknown[] = Array.isArray(x) ? x : typeof x === 'string' ? x.split(/\n+/) : [];
+  const paragraphs: string[] = [];
+  for (const item of raw) {
+    let text = '';
+    if (typeof item === 'string') text = item;
+    else if (item && typeof item === 'object') {
+      const record = item as Record<string, unknown>;
+      const found = [record.text, record.content, record.paragraph].find((v) => typeof v === 'string');
+      if (typeof found === 'string') text = found;
+    }
+    const cleaned = toSimplifiedText(text.replace(/\s+/g, ' ').trim());
+    if (!cleaned) continue;
+    paragraphs.push(...splitRunawayParagraph(cleaned));
+  }
+  if (!paragraphs.length) throw new Error('INVALID_PARAGRAPHS');
+  return paragraphs;
+}
 export function validateQuiz(x: unknown) {
   if (!x || typeof x !== 'object') throw new Error('INVALID_QUIZ');
   const q = x as { question?: unknown; options?: unknown; correctIndex?: unknown; rightFeedback?: unknown; wrongFeedback?: unknown };
@@ -375,18 +421,32 @@ export async function generateAdaptedChapter(env: JobEnv, p: JobParams) {
   const chunks = splitForRewrite(p.sourceText, 2200);
   let chapter: string[] = [], summaries: string[] = [];
   try {
-    const parts = await Promise.all(chunks.map(async (source, i) => {
-      const result = await completeJsonResult(env, [
-        '任务：改写当前分段原文。',
-        '输入字段：title 是书名；profile 是读者偏好；part/total 是分段位置；source 是当前分段原文。',
-        '固定模板：paragraphs 只放改写后的现代简体中文白话文，每段 90-190 字；summary 只记事实链。',
-        '改写要求：只处理当前分段，保持原文事件顺序，写成可与前后段自然拼接的叙述。不能整段照抄原文，不能输出繁体字。',
-        '输出 schema：{"paragraphs":["改写后的简体中文自然段"],"summary":"事件链事实摘要"}',
-      ].join('\n'), { title: p.title, profile: p.profile, part: i + 1, total: chunks.length, source }, p.aiConfig, fetch, budget(45_000), deadline);
-      const paragraphs = validateParagraphs(result.json.paragraphs);
-      if (looksCopiedFromSource(paragraphs, source)) throw new Error('OUTPUT_TOO_CLOSE_TO_SOURCE');
-      return { index: i, model: result.model, paragraphs, summary: typeof result.json.summary === 'string' ? toSimplifiedText(result.json.summary.slice(0, 400)) : '' };
-    }));
+    const rewriteChunk = async (source: string, i: number) => {
+      // 模型偶尔会吐出一个结构不对的分段（JSON 里 paragraphs 缺了，或者整段照抄原文）。
+      // 这是随机性的，重来一次多半就好；直接放弃等于让读者白等一场，还白花一次免费额度。
+      let lastError: unknown = new Error('INVALID_PARAGRAPHS');
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          const result = await completeJsonResult(env, [
+            '任务：改写当前分段原文。',
+            '输入字段：title 是书名；profile 是读者偏好；part/total 是分段位置；source 是当前分段原文。',
+            '固定模板：paragraphs 只放改写后的现代简体中文白话文，每段 90-190 字；summary 只记事实链。',
+            '改写要求：只处理当前分段，保持原文事件顺序，写成可与前后段自然拼接的叙述。不能整段照抄原文，不能输出繁体字。',
+            '输出 schema：{"paragraphs":["改写后的简体中文自然段"],"summary":"事件链事实摘要"}',
+          ].join('\n'), { title: p.title, profile: p.profile, part: i + 1, total: chunks.length, source }, p.aiConfig, fetch, budget(45_000), deadline);
+          const paragraphs = validateParagraphs(result.json.paragraphs);
+          if (looksCopiedFromSource(paragraphs, source)) throw new Error('OUTPUT_TOO_CLOSE_TO_SOURCE');
+          return { index: i, model: result.model, paragraphs, summary: typeof result.json.summary === 'string' ? toSimplifiedText(result.json.summary.slice(0, 400)) : '' };
+        } catch (error) {
+          lastError = error;
+          // 配置或额度问题重来也没用，别把剩下的额度再烧一遍。
+          if (isUserConfigError(error)) throw error;
+          console.error(JSON.stringify({ event: 'chunk_retry', part: i + 1, attempt, error: error instanceof Error ? error.message : String(error) }));
+        }
+      }
+      throw lastError;
+    };
+    const parts = await Promise.all(chunks.map((source, i) => rewriteChunk(source, i)));
     parts.sort((a, b) => a.index - b.index).forEach((part) => {
       chapter.push(...part.paragraphs);
       summaries.push(part.summary);

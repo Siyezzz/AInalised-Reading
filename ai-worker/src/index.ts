@@ -38,6 +38,15 @@ function parseModelJson(value: string): unknown {
   return JSON.parse(jsonLike);
 }
 
+/** 从上游响应头里读出「今天还剩多少次免费请求」。读不到就返回 undefined，不要编数字。 */
+function readQuota(response: Response) {
+  const limit = Number(response.headers.get('x-ratelimit-limit'));
+  const remaining = Number(response.headers.get('x-ratelimit-remaining'));
+  if (!Number.isFinite(limit) || !Number.isFinite(remaining)) return undefined;
+  const reset = Number(response.headers.get('x-ratelimit-reset'));
+  return { limit, remaining, resetAt: Number.isFinite(reset) ? reset : undefined };
+}
+
 function assertChapterShape(value: unknown) {
   if (!value || typeof value !== 'object') throw new Error('INVALID_CHAPTER_OBJECT');
   const item = value as { chapter?: unknown; quiz?: { options?: unknown; correctIndex?: unknown } };
@@ -73,9 +82,12 @@ export default {
             body: JSON.stringify({ model: aiConfig.model, messages: [{ role: 'user', content: '只回复两个字：可用' }], max_tokens: 16 }),
             signal: AbortSignal.timeout(30_000),
           });
-          if (!r.ok) return json({ ok: false, status: r.status, model: aiConfig.model, message: await upstreamMessage(r) }, 200, request);
+          // OpenRouter 这类服务商把免费额度写在响应头上。一次小请求只能证明「线路通」，
+          // 不能证明「改写一章够用」——所以把剩余额度一起带回去，读者才知道还能跑几章。
+          const quota = readQuota(r);
+          if (!r.ok) return json({ ok: false, status: r.status, model: aiConfig.model, message: await upstreamMessage(r), quota }, 200, request);
           const data = await r.json() as { choices?: { message?: { content?: string } }[] };
-          return json({ ok: true, status: r.status, model: aiConfig.model, ms: Date.now() - started, reply: (data.choices?.[0]?.message?.content || '').trim().slice(0, 40) }, 200, request);
+          return json({ ok: true, status: r.status, model: aiConfig.model, ms: Date.now() - started, reply: (data.choices?.[0]?.message?.content || '').trim().slice(0, 40), quota }, 200, request);
         } catch (testError) {
           const message = testError instanceof Error ? testError.message : String(testError);
           return json({ ok: false, status: 0, model: aiConfig.model, message: /abort|timeout/i.test(message) ? '30 秒内没有响应，可能是网络不通或模型太慢。' : message.slice(0, 200) }, 200, request);
@@ -156,14 +168,21 @@ export default {
       return json({ content: parsed, source: resolved.url, model: modelUsed, imageModel: aiConfig.imageModel || 'built-in-svg-fallback', verified: 'model-self-check+structure-check' }, 200, request);
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'UNKNOWN';
+      // 真正要判断的是错误码，不是整句话——上游原话跟在「：」后面，别让原话干扰分类。
+      const code = detail.split('：')[0];
       console.error(JSON.stringify({ event: 'adapt_failed', title, error: detail }));
-      if (detail === 'USER_KEY_REQUIRED' || detail === 'USER_MODEL_CONFIG_INVALID') {
+      if (code === 'USER_KEY_REQUIRED' || code === 'USER_MODEL_CONFIG_INVALID') {
         return json({ error: 'USER_KEY_REQUIRED', message: '请先在「阅读画像」里填写自己的 API key，站点不再提供共用 AI 线路。' }, 402, request);
       }
-      if (detail === 'USER_MODEL_QUOTA') {
-        return json({ error: 'USER_MODEL_QUOTA', message: '你自己的 API key 额度用完了，请换一个 key 或稍后再试。', detail }, 429, request);
+      // 免费额度用完是最容易被误判成「key 填错了」的一种失败：线路测试只花 1 次请求，
+      // 能过；改写一章要 4～10 次，一次就用光。所以这里必须说清楚，并给出能走通的下一步。
+      if (code === 'USER_MODEL_QUOTA_DAILY') {
+        return json({ error: 'USER_MODEL_QUOTA_DAILY', message: `${requestedModel ? `模型 ${requestedModel} 所在服务商的` : '当前服务商的'}免费额度今天已经用完了，所以现在怎么重试都不会成功。OpenRouter 免费档每天上限 50 次请求，改写一章要用 4～10 次；在 OpenRouter 充 5 美元可以升到每天 1000 次，或者到「阅读画像」把服务商换成 Groq、Google Gemini 的免费额度（那边额度宽松得多）。明天额度重置后也可以继续用这条线路。`, detail }, 429, request);
       }
-      if (detail.startsWith('USER_MODEL_HTTP_') || detail.startsWith('USER_IMAGE_HTTP_') || detail.startsWith('USER_MODEL_EMPTY')) {
+      if (code === 'USER_MODEL_QUOTA') {
+        return json({ error: 'USER_MODEL_QUOTA', message: '请求太密集，被服务商限流了（不是 key 的问题）。等十几秒再点「重试失败步骤」通常就能过。', detail }, 429, request);
+      }
+      if (code.startsWith('USER_MODEL_HTTP_') || code.startsWith('USER_IMAGE_HTTP_') || code.startsWith('USER_MODEL_EMPTY')) {
         return json({ error: 'USER_MODEL_FAILED', message: `调用你自己的 API 线路失败了（模型 ${requestedModel || '未知'}）。`, detail }, 502, request);
       }
       // 超时不是线路配错，读者能做的是换一个更快的模型或稍后重试。

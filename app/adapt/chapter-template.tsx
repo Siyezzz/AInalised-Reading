@@ -34,16 +34,22 @@ type Props = {
   onIllustrate: () => void;
 };
 
+/** 操作条只剩图标，状态得靠 title / aria-label 说清楚。 */
+function shelfLabel(state: Props['shelfState']) {
+  if (state === 'saved') return '已加入书架';
+  if (state === 'saving') return '正在加入书架';
+  return '加入书架';
+}
+
 export function ChapterTemplate({ chapter, title, sourceUrl, chapterNumber, shelfState, answer, chapterFeedback, busy, onAddToShelf, onDownload, onAnswer, onFeedback, onIllustrate }: Props) {
   const nextChapterUrl = `/adapt?title=${encodeURIComponent(title)}&source=${encodeURIComponent(sourceUrl)}&chapter=${chapterNumber + 1}&fresh=1`;
   return <>
     <div className="chapter-actions" aria-label="章节操作">
-      <button onClick={onAddToShelf} disabled={shelfState === 'saving' || shelfState === 'saved'}>
-        {shelfState === 'saved' ? <Check size={17} /> : shelfState === 'saving' ? <LoaderCircle className="spin" size={17} /> : <BookmarkPlus size={17} />}
-        {shelfState === 'saved' ? '已加入书架' : shelfState === 'saving' ? '正在加入' : '加入书架'}
+      <button type="button" className="chapter-icon" onClick={onAddToShelf} disabled={shelfState === 'saving' || shelfState === 'saved'} title={shelfLabel(shelfState)} aria-label={shelfLabel(shelfState)}>
+        {shelfState === 'saved' ? <Check size={16} /> : shelfState === 'saving' ? <LoaderCircle className="spin" size={16} /> : <BookmarkPlus size={16} />}
       </button>
-      <button className="secondary" onClick={onDownload} title="导出本章改写内容（Markdown 文件）"><Download size={17} />导出本章</button>
-      <a className="chapter-next-link" href={nextChapterUrl}><StepForward size={17} />下一章</a>
+      <button type="button" className="chapter-icon" onClick={onDownload} title="导出本章改写内容（Markdown 文件）" aria-label="导出本章"><Download size={16} /></button>
+      <a className="chapter-icon" href={nextChapterUrl} title="读下一章" aria-label="读下一章"><StepForward size={16} /></a>
     </div>
     {shelfState === 'error' && <p className="chapter-save-message">加入失败，请登录后重试。</p>}
     <section className="chapter-body">

@@ -458,3 +458,51 @@
     padding: 18px;
   }
 }
+
+/* 章节页右上角的浮动操作条。
+   原来是「加入书架 / 导出本章 / 下一章」三个带字的按钮，宽度三百多像素、
+   固定在视口上，正文往下滚时会从它下面滑过，正好被挡住。
+   改成纯图标的圆形按钮，宽度缩到约三分之一，并贴住右上角。 */
+.chapter-actions {
+  top: 74px;
+  right: 14px;
+  gap: 6px;
+  padding: 6px;
+}
+.chapter-actions .chapter-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(21, 63, 53, 0.14);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.82);
+  color: #285f50;
+  font-size: 0;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+}
+.chapter-actions .chapter-icon:hover {
+  border-color: #153f35;
+  background: #153f35;
+  color: #fff;
+}
+.chapter-actions .chapter-icon:disabled {
+  opacity: 0.72;
+  cursor: default;
+}
+@media (max-width: 700px) {
+  .chapter-actions {
+    top: 64px;
+    right: 10px;
+    gap: 4px;
+    padding: 5px;
+  }
+  .chapter-actions .chapter-icon {
+    width: 34px;
+    height: 34px;
+  }
+}
