@@ -30,15 +30,29 @@
   backdrop-filter: blur(6px);
 }
 .ai-setup-panel {
+  display: flex;
+  flex-direction: column;
   width: min(560px, 100%);
   max-height: calc(100vh - 40px);
-  overflow: auto;
+  /* 面板本身不滚动：标题和「保存并开始」始终可见，只有中间字段区滚动。
+     之前是整个面板 overflow:auto，窗口一矮，按钮就被挤到滚动区外面，
+     读者会以为「填完了没有保存的地方」。 */
+  overflow: hidden;
   padding: 26px;
   border: 1px solid #dcd8cb;
   border-radius: 22px;
   background: #fdfcf8;
   color: #17362f;
   box-shadow: 0 26px 70px rgba(16, 46, 38, 0.28);
+}
+/* 唯一可滚动区域，负外边距让滚动条贴住面板边缘而不压住输入框 */
+.ai-setup-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 20px -8px 0 0;
+  padding-right: 8px;
 }
 .ai-setup-panel header {
   display: grid;
@@ -107,7 +121,7 @@
 .ai-setup-form {
   display: grid;
   gap: 11px;
-  margin: 20px 0 14px;
+  margin: 0 0 14px;
 }
 .ai-setup-form label {
   display: grid;
@@ -118,12 +132,23 @@
 }
 .ai-setup-form input,
 .ai-setup-form select {
+  /* width + min-width 缺一不可：grid 项默认 min-width:auto，
+     会被 <option> 的文字宽度撑破容器，导致面板里冒出横向滚动条 */
+  width: 100%;
+  min-width: 0;
   padding: 10px 12px;
   border: 1px solid #d5d2c6;
   border-radius: 11px;
   background: #fff;
   font-size: 13px;
   color: #17362f;
+}
+/* 预设说明放在下拉框下面，而不是塞进 <option> 里 */
+.ai-setup-note {
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.6;
+  color: #6b7d76;
 }
 .ai-setup-apply {
   display: inline-flex;
@@ -180,9 +205,19 @@
   font-weight: 700;
   text-decoration: none;
 }
+/* 固定在面板底部，不随字段区滚动；「保存并开始」永远看得见。
+   display 必须显式覆盖：globals.css 里有一条页面级 footer{display:grid;
+   grid-template-columns:120px 1fr 120px}，会把按钮压进 120px 的窄列里折成两行。 */
 .ai-setup-panel footer {
+  display: block;
+  flex: 0 0 auto;
   margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #e8e4d8;
   text-align: center;
+}
+.ai-setup-panel footer .ai-setup-actions {
+  margin-bottom: 10px;
 }
 .ai-setup-skip {
   border: 0;
@@ -239,6 +274,13 @@
   font-size: 12px;
   line-height: 1.7;
   color: #5a6f68;
+}
+/* 当前选中线路的说明，放在下拉框下面而非 <option> 里 */
+.model-settings-hint {
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.6;
+  color: #6b7d76;
 }
 
 /* 站点自己的登录 */

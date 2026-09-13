@@ -124,66 +124,81 @@ export default function AiSetup() {
           </button>
         </header>
 
-        <div className="ai-setup-form">
-          <label>
-            服务商
-            <select value={presetId} onChange={(event) => choosePreset(event.target.value)}>
-              {apiPresets.map((item) => (
-                <option value={item.id} key={item.id}>
-                  {item.name} - {item.note}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Base URL
-            <input value={apiBaseUrl} onChange={(event) => setApiBaseUrl(event.target.value)} placeholder="https://api.groq.com/openai/v1" />
-          </label>
-          <label>
-            Model
-            <input value={apiModel} onChange={(event) => setApiModel(event.target.value)} placeholder="模型名" />
-          </label>
-          <label>
-            API key
-            <input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="粘贴你申请到的 key" autoComplete="off" />
-          </label>
-          {showImage ? (
+        {/* 只有这一段会滚动，标题和底部的「保存并开始」始终可见 */}
+        <div className="ai-setup-body">
+          <div
+            className="ai-setup-form"
+            onKeyDown={(event) => {
+              // 填完 key 顺手敲回车是很自然的动作，之前按回车毫无反应。
+              if (event.key === 'Enter' && !(event.target instanceof HTMLTextAreaElement)) {
+                event.preventDefault();
+                saveKey();
+              }
+            }}
+          >
             <label>
-              插图模型（可选）
-              <input value={imageModel} onChange={(event) => setImageModel(event.target.value)} placeholder="留空则用内置插图" />
+              服务商
+              <select value={presetId} onChange={(event) => choosePreset(event.target.value)}>
+                {apiPresets.map((item) => (
+                  <option value={item.id} key={item.id}>
+                    {item.name}
+                    {item.free ? '（有免费额度）' : ''}
+                  </option>
+                ))}
+              </select>
+              {/* 说明放在下拉框外面：塞进 <option> 会把下拉框撑得比面板还宽 */}
+              {current.note && <span className="ai-setup-note">{current.note}</span>}
             </label>
-          ) : (
-            <button type="button" className="ai-setup-more" onClick={() => setShowImage(true)}>
-              想生成 AI 插图？填一个支持生图的模型名
-            </button>
-          )}
-          {current.keyUrl && (
-            <a className="ai-setup-apply" href={current.keyUrl} target="_blank" rel="noreferrer">
-              去 {current.name} 申请 key
-              <ExternalLink size={14} />
-            </a>
-          )}
-          {error && <p className="ai-setup-error">{error}</p>}
+            <label>
+              Base URL
+              <input value={apiBaseUrl} onChange={(event) => setApiBaseUrl(event.target.value)} placeholder="https://api.groq.com/openai/v1" />
+            </label>
+            <label>
+              Model
+              <input value={apiModel} onChange={(event) => setApiModel(event.target.value)} placeholder="模型名" />
+            </label>
+            <label>
+              API key
+              <input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="粘贴你申请到的 key" autoComplete="off" />
+            </label>
+            {showImage ? (
+              <label>
+                插图模型（可选）
+                <input value={imageModel} onChange={(event) => setImageModel(event.target.value)} placeholder="留空则用内置插图" />
+              </label>
+            ) : (
+              <button type="button" className="ai-setup-more" onClick={() => setShowImage(true)}>
+                想生成 AI 插图？填一个支持生图的模型名
+              </button>
+            )}
+            {current.keyUrl && (
+              <a className="ai-setup-apply" href={current.keyUrl} target="_blank" rel="noreferrer">
+                去 {current.name} 申请 key
+                <ExternalLink size={14} />
+              </a>
+            )}
+            {error && <p className="ai-setup-error">{error}</p>}
+          </div>
+
+          <div className="ai-setup-links">
+            <span>还没有 key？这些都是免费申请的：</span>
+            <div>
+              {keyLinks.map((item) => (
+                <a href={item.keyUrl} target="_blank" rel="noreferrer" key={item.id}>
+                  {item.name}
+                  {item.free ? ' 免费' : ''}
+                </a>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <footer>
           <div className="ai-setup-actions">
             <button type="button" onClick={saveKey}>
               保存并开始
             </button>
           </div>
-        </div>
-
-        <div className="ai-setup-links">
-          <span>还没有 key？这些都是免费申请的：</span>
-          <div>
-            {keyLinks.map((item) => (
-              <a href={item.keyUrl} target="_blank" rel="noreferrer" key={item.id}>
-                {item.name}
-                {item.free ? ' 免费' : ''}
-              </a>
-            ))}
-          </div>
-        </div>
-
-        <footer>
           <button type="button" className="ai-setup-skip" onClick={dismiss}>
             先随便逛逛，稍后在「阅读画像」里设置
           </button>

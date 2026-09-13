@@ -182,9 +182,14 @@ export default function ProfileClient({ email }: { email: string }) {
               API 服务
               <select value={apiPreset} onChange={(event) => choosePreset(event.target.value)}>
                 {apiPresets.map((preset) => (
-                  <option value={preset.id} key={preset.id}>{preset.name} - {preset.note}</option>
+                  <option value={preset.id} key={preset.id}>
+                    {preset.name}
+                    {preset.free ? '（有免费额度）' : ''}
+                  </option>
                 ))}
               </select>
+              {/* 说明放在下拉框外面：塞进 <option> 会把下拉框撑破容器宽度 */}
+              {keyApply?.note && <small className="model-settings-hint">{keyApply.note}</small>}
             </label>
             {keyApply?.keyUrl && (
               <p className="api-key-apply">
