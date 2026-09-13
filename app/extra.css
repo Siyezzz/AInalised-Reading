@@ -164,6 +164,26 @@
   font-size: 12px;
   color: #b4452f;
 }
+/* 「测试这条线路」的结果：绿=可用，红=不可用并附带上游原话 */
+.ai-setup-test,
+.model-settings-test {
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.ai-setup-test.ok,
+.model-settings-test.ok {
+  background: #e8f4ee;
+  color: #1d6554;
+}
+.ai-setup-test.bad,
+.model-settings-test.bad {
+  background: #fdeee9;
+  color: #b4452f;
+}
 .ai-setup-actions {
   display: flex;
   gap: 8px;
@@ -182,6 +202,17 @@
 .ai-setup-actions button.secondary {
   background: rgba(21, 63, 53, 0.08);
   color: #285f50;
+}
+/* 次要动作：先测线路，再保存 */
+.ai-setup-actions button.ai-setup-test-btn,
+.profile-form fieldset .test-model {
+  background: rgba(21, 63, 53, 0.08);
+  color: #285f50;
+}
+.ai-setup-actions button:disabled,
+.profile-form fieldset .test-model:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 .ai-setup-links {
   padding: 13px 15px;
@@ -391,6 +422,22 @@
   margin: 8px 0 0;
   font-size: 12px;
   color: #b4452f;
+}
+/* 「测试这条线路」+「保存模型设置」并排 */
+.model-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-self: start;
+}
+/* 章节页报错时补一行「当前线路」，模型已下架这种情况一眼能看出来 */
+.chapter-shell [role="alert"] .alert-line {
+  display: block;
+  margin-top: 8px;
+  color: #6b7d76;
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
 }
 /* 原文查看页：站点只保留抽取出的正文，用可滚动的文本面板代替原来的 PDF iframe */
 .pdf-workspace > .original-text {

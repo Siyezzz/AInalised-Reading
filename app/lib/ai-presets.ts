@@ -15,7 +15,7 @@ export type ApiPreset = {
 export const apiPresets: ApiPreset[] = [
   { id: 'groq', name: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'qwen/qwen3.8-27b', note: '免费额度，速度最快，推荐先试', keyUrl: 'https://console.groq.com/keys', free: true },
   { id: 'gemini', name: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash', note: 'AI Studio 免费额度，性价比高', keyUrl: 'https://aistudio.google.com/apikey', free: true },
-  { id: 'openrouter', name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'nex-agi/nex-n2.5-mini:free', note: '实测可用的免费模型，填 key 即可改写；若被下架可换成 nex-agi/nex-n2.5-pro:free', keyUrl: 'https://openrouter.ai/keys', free: true },
+  { id: 'openrouter', name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'nex-agi/nex-n2.5-mini:free', note: '免费模型会不定期下架。模型失效时站点会自动换成其他免费模型，也可以点「测试这条线路」先确认。', keyUrl: 'https://openrouter.ai/keys', free: true },
   { id: 'siliconflow', name: '硅基流动', baseUrl: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen2.5-72B-Instruct', note: '国内网络直连，注册送额度', keyUrl: 'https://cloud.siliconflow.cn/account/ak', free: true },
   { id: 'deepseek', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', note: '便宜，中文和长文本成本低', keyUrl: 'https://platform.deepseek.com/api_keys' },
   { id: 'moonshot', name: 'Moonshot Kimi', baseUrl: 'https://api.moonshot.cn/v1', model: 'kimi-k2-0711-preview', note: '中文长文本可试', keyUrl: 'https://platform.moonshot.cn/console/api-keys' },
@@ -75,4 +75,28 @@ export function saveAiSettings(settings: AiSettings) {
 /** 判断一份线路配置能不能真的发起改写。 */
 export function hasUsableAiSettings(settings = readAiSettings()) {
   return settings.aiProvider === 'openai-compatible' && Boolean(settings.apiBaseUrl && settings.apiModel && settings.apiKey);
+}
+
+export type LineTest = { ok: boolean; status?: number; model?: string; ms?: number; reply?: string; message?: string };
+
+/**
+ * 让站点替读者打一次最小请求。
+ * 以前只有真正改写时才知道模型已下架，读者会误以为是自己 key 填错了——
+ * 加这个入口，存之前就能确认线路到底能不能用。
+ */
+export async function testAiLine(settings: AiSettings): Promise<LineTest> {
+  try {
+    const response = await fetch('/api/ai-test', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(settings) });
+    const data = (await response.json()) as LineTest & { error?: string };
+    if (typeof data?.ok === 'boolean') return data;
+    return { ok: false, status: response.status, message: data?.error || '站点没有返回测试结果。' };
+  } catch {
+    return { ok: false, message: '网络不通，没能联系上站点。' };
+  }
+}
+
+/** 把一次线路测试的结果说成一句人话。 */
+export function describeLineTest(result: LineTest) {
+  if (result.ok) return `线路可用：${result.model} 在 ${result.ms ?? '-'}ms 内返回「${result.reply || '正常'}」`;
+  return `线路不可用${result.status ? `（HTTP ${result.status}）` : ''}：${result.message || '未知原因'}`;
 }

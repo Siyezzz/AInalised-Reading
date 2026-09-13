@@ -12,6 +12,12 @@ type Result = { job?: { status: string; output?: Chapter; error?: { message?: st
  * 否则一般的 5xx 也会被误判成配置问题。
  */
 const KEY_ISSUE_PATTERN = /USER_KEY_REQUIRED|USER_MODEL_QUOTA|USER_MODEL_CONFIG_INVALID|USER_MODEL_HTTP_40[13]|UNAUTHORIZED|额度|余额|欠费|key 无效|未授权/;
+/**
+ * 线路本身调用失败（模型已下架、Base URL 写错、上游 5xx）。
+ * 这类错误在错误文案里带上模型名和上游原话，并给一个「换一条线路」的入口——
+ * 之前只显示「请检查 Base URL、模型名和 key」，读者会一直以为是 key 填错了，重复重试同一条坏线路。
+ */
+const LINE_ISSUE_PATTERN = /USER_MODEL_FAILED|USER_MODEL_HTTP_|USER_MODEL_EMPTY|MODEL_TIMEOUT|调用你自己的 API 线路/;
 function validChapter(x: Chapter) { return x && typeof x.chapterTitle === 'string' && Array.isArray(x.chapter) && x.chapter.length >= 4 && x.chapter.every(p => typeof p === 'string' && p.trim()) && x.quiz && typeof x.quiz.question === 'string' && x.quiz.options?.length === 4 && x.quiz.options.every(o => typeof o === 'string') && Number.isInteger(x.quiz.correctIndex) && x.quiz.correctIndex >= 0 && x.quiz.correctIndex < 4 && x.quiz.wrongFeedback?.length === 4; }
 export default function AdaptReader() {
   const params = useSearchParams(), title = params.get('title') || '', source = params.get('source') || '';
@@ -22,6 +28,9 @@ export default function AdaptReader() {
   const [chapterFeedback, setChapterFeedback] = useState('');
   // 错误原因如果是「没填 / 填错了自己的 key」，重试没有意义，应直接引导去配置。
   const [keyIssue, setKeyIssue] = useState(false);
+  // 线路本身打不通（模型下架 / Base URL 错 / 上游 5xx）：重试前先让读者看到用的是哪条线路。
+  const [lineIssue, setLineIssue] = useState(false);
+  const [line, setLine] = useState('');
   const ticket = useRef<Ticket | null>(null), working = useRef(false), autoStarted = useRef('');
   const [jobId, setJobId] = useState<string | null>(null);
   const storageKey = 'reading-job:v2:' + title + ':' + source + ':' + chapterNumber;
@@ -35,7 +44,11 @@ export default function AdaptReader() {
     const r = await fetch(t.editorUrl, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` }, body: JSON.stringify({ title, sourceUrl: source, chapterNumber, profile: t.profile, ...aiSettings, ...body }), signal: AbortSignal.timeout(240_000) });
     const x = await r.json() as Result;
     if (!r.ok) {
-      setKeyIssue(KEY_ISSUE_PATTERN.test([x.error, x.message, x.detail].filter(Boolean).join(' ')));
+      const text = [x.error, x.message, x.detail].filter(Boolean).join(' ');
+      setKeyIssue(KEY_ISSUE_PATTERN.test(text));
+      setLineIssue(LINE_ISSUE_PATTERN.test(text));
+      const settings = readAiSettings();
+      setLine(settings.apiModel ? `${settings.apiModel} @ ${settings.apiBaseUrl}` : '未配置');
       throw new Error([x.message || x.error || '服务请求失败', x.detail].filter(Boolean).join('：'));
     }
     return x;
@@ -81,6 +94,7 @@ export default function AdaptReader() {
       setJobId(null);
       setError('');
       setKeyIssue(false);
+      setLineIssue(false);
       setNotice('');
       setAttempt((x) => x + 1);                 // 走一遍完整流程：重取票据 → 取原文 → 自动改写
     };
@@ -139,6 +153,12 @@ export default function AdaptReader() {
     }
     catch(e) { setError(e instanceof Error ? e.message : '提交失败'); setBusy(false); } finally { working.current = false; }
   }
+  function retry() {
+    if (jobId) { localStorage.removeItem(storageKey); autoStarted.current = ''; setJobId(null); setAttempt(x => x+1); }
+    else if (chapter) { void illustrate(chapter).catch(e => setError(String(e))); }
+    else if (prepared) { void generate(); }
+    else setAttempt(x => x+1);
+  }
   useEffect(() => {
     if (!prepared || chapter || jobId || busy || error || autoStarted.current === storageKey) return;
     autoStarted.current = storageKey;
@@ -188,7 +208,10 @@ export default function AdaptReader() {
     {(busy || (!chapter && prepared)) && <div className="adapt-progress" role="status"><strong>{label}</strong><small>{progress}%</small><i><b style={{width: `${progress}%`}} /></i></div>}
     {error && <div role="alert"><p>{error}</p>{keyIssue
       ? <><button className="alert-action" onClick={openKeySetup}>填写 API key</button> <a href="/profile">去阅读画像设置</a></>
-      : !busy && <><button onClick={() => { if (jobId) { localStorage.removeItem(storageKey); autoStarted.current = ''; setJobId(null); setAttempt(x => x+1); } else if (chapter) { void illustrate(chapter).catch(e => setError(String(e))); } else if (prepared) { void generate(); } else setAttempt(x => x+1); }}>重试失败步骤</button> <a href="/profile">检查 AI 线路设置</a></>}</div>}
+      : lineIssue
+        ? <>{!busy && <button onClick={retry}>重试失败步骤</button>}<button className="alert-action" onClick={openKeySetup}>换一条线路</button> <a href="/profile">去阅读画像设置</a></>
+        : !busy && <><button onClick={retry}>重试失败步骤</button> <a href="/profile">检查 AI 线路设置</a></>}
+      {lineIssue && <small className="alert-line">当前线路：{line}。模型可能已被服务商下架，换一个模型名或点「换一条线路」重新选。</small>}</div>}
     {notice && <p role="status">{notice}</p>}
     {prepared && !chapter && !busy && <section className="adapt-ready"><div><span>原文已就绪</span><h2>{prepared.title}</h2><p>已识别第 {chapterNumber} 章，共 {prepared.text.length.toLocaleString()} 字符。系统正在自动开始改写和配图，无需再操作。</p></div><details><summary>查看提取的第 {chapterNumber} 章原文</summary><pre>{prepared.text}</pre></details></section>}
     {chapter && <ChapterTemplate chapter={chapter} title={title} sourceUrl={source} chapterNumber={chapterNumber} shelfState={shelfState} answer={answer} chapterFeedback={chapterFeedback} busy={busy} onAddToShelf={addToShelf} onDownload={() => download(chapterMarkdown(chapter), `${title}-第${chapterNumber}章.md`)} onAnswer={setAnswer} onFeedback={(item) => { setChapterFeedback(item); localStorage.setItem(`reading-feedback:${title}:${source}:${chapterNumber}`, item); }} onIllustrate={() => { setBusy(true); illustrate(chapter).catch(e => setError(String(e))).finally(() => setBusy(false)); }} />}

@@ -1,5 +1,5 @@
 import { type JobEnv } from './reading-workflow';
-import { ADAPTATION_SKILL, IMAGE_STYLE_PROMPT, fallbackSvg, generateAdaptedChapter, normalizeUserAiConfig } from './reading-workflow';
+import { ADAPTATION_SKILL, IMAGE_STYLE_PROMPT, fallbackSvg, generateAdaptedChapter, normalizeUserAiConfig, upstreamMessage } from './reading-workflow';
 export { ReadingWorkflow } from './reading-workflow';
 import { resolveSource } from './sources';
 interface EditorEnv extends Cloudflare.Env, JobEnv { EDITOR_SECRET: string }
@@ -56,9 +56,31 @@ export default {
     if (!title) return json({ error: 'TITLE_REQUIRED' }, 400, request);
     const bearer = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') || '';
     if (bearer !== env.EDITOR_SECRET && !(await validSignedToken(bearer, env.EDITOR_SECRET, title))) return json({ error: 'UNAUTHORIZED' }, 401, request);
+    let requestedModel = '';
     try {
       const chapterNumber = Math.max(1, Math.min(200, Math.trunc(Number(body.chapterNumber) || 1)));
       const aiConfig = normalizeUserAiConfig({ provider: body.aiProvider, apiKey: body.apiKey, baseUrl: body.apiBaseUrl, model: body.apiModel });
+      requestedModel = aiConfig?.model || '';
+      // 「测试这条线路」：配置完当场打一次最小请求，把上游的原话回给读者。
+      // 以前只有等到真正改写时才知道模型已下架，读者会以为是自己 key 填错了。
+      if (body.action === 'test-line') {
+        if (!aiConfig) return json({ ok: false, model: body.apiModel || '', message: 'Base URL、模型名和 key 都要填完整（Base URL 必须是 https）。' }, 200, request);
+        const started = Date.now();
+        try {
+          const r = await fetch(`${aiConfig.baseUrl}/chat/completions`, {
+            method: 'POST',
+            headers: { authorization: `Bearer ${aiConfig.apiKey}`, 'content-type': 'application/json' },
+            body: JSON.stringify({ model: aiConfig.model, messages: [{ role: 'user', content: '只回复两个字：可用' }], max_tokens: 16 }),
+            signal: AbortSignal.timeout(30_000),
+          });
+          if (!r.ok) return json({ ok: false, status: r.status, model: aiConfig.model, message: await upstreamMessage(r) }, 200, request);
+          const data = await r.json() as { choices?: { message?: { content?: string } }[] };
+          return json({ ok: true, status: r.status, model: aiConfig.model, ms: Date.now() - started, reply: (data.choices?.[0]?.message?.content || '').trim().slice(0, 40) }, 200, request);
+        } catch (testError) {
+          const message = testError instanceof Error ? testError.message : String(testError);
+          return json({ ok: false, status: 0, model: aiConfig.model, message: /abort|timeout/i.test(message) ? '30 秒内没有响应，可能是网络不通或模型太慢。' : message.slice(0, 200) }, 200, request);
+        }
+      }
       if (body.action === 'start-job' || body.action === 'job-status') {
         const claims = bearer === env.EDITOR_SECRET ? { uid: 'admin' } : JSON.parse(new TextDecoder().decode(fromBase64Url(bearer.split('.')[1])));
         if (!claims.uid) return json({ error: 'UNAUTHORIZED' }, 401, request);
@@ -141,8 +163,12 @@ export default {
       if (detail === 'USER_MODEL_QUOTA') {
         return json({ error: 'USER_MODEL_QUOTA', message: '你自己的 API key 额度用完了，请换一个 key 或稍后再试。', detail }, 429, request);
       }
-      if (detail.startsWith('USER_MODEL_HTTP_') || detail.startsWith('USER_IMAGE_HTTP_')) {
-        return json({ error: 'USER_MODEL_FAILED', message: '调用你自己的 API 线路失败了，请检查 Base URL、模型名和 key 是否正确。', detail }, 502, request);
+      if (detail.startsWith('USER_MODEL_HTTP_') || detail.startsWith('USER_IMAGE_HTTP_') || detail.startsWith('USER_MODEL_EMPTY')) {
+        return json({ error: 'USER_MODEL_FAILED', message: `调用你自己的 API 线路失败了（模型 ${requestedModel || '未知'}）。`, detail }, 502, request);
+      }
+      // 超时不是线路配错，读者能做的是换一个更快的模型或稍后重试。
+      if (/abort|timeout|超时|BUDGET_EXHAUSTED/i.test(detail)) {
+        return json({ error: 'MODEL_TIMEOUT', message: '模型这次没能按时写完（免费模型高峰期常见）。可以换一个响应更快的模型，或稍后重试。', detail }, 504, request);
       }
       return json({ error: 'GENERATION_FAILED', message: '改写未完成，请重试。', detail }, 502, request);
     }

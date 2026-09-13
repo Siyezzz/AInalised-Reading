@@ -34,39 +34,106 @@ export function normalizeUserAiConfig(input: unknown): UserAiConfig | undefined 
   } catch { return undefined; }
   return { provider, apiKey, baseUrl, model, imageModel: imageModel || undefined };
 }
-export async function completeJsonResult(env: JobEnv, system: string, input: unknown, aiConfig?: UserAiConfig, fetcher: typeof fetch = fetch, timeoutMs = 90_000): Promise<CompletionResult> {
+export async function completeJsonResult(env: JobEnv, system: string, input: unknown, aiConfig?: UserAiConfig, fetcher: typeof fetch = fetch, timeoutMs = 90_000, deadline?: number): Promise<CompletionResult> {
   void env;
   const instruction = `${ADAPTATION_SKILL}\n${JSON_OUTPUT_RULE}\n${system}`;
-  const parse = (text: string, model: string) => ({ json: parseJsonFromText(text), model });
   if (aiConfig?.provider !== 'openai-compatible' || !aiConfig.apiKey || !aiConfig.baseUrl || !aiConfig.model) throw new Error('USER_KEY_REQUIRED');
-  return parse(await completeOpenAICompatibleJson(aiConfig, instruction, input, fetcher, timeoutMs), aiConfig.model);
+  const completion = await completeOpenAICompatibleJson(aiConfig, instruction, input, fetcher, timeoutMs, deadline);
+  return { json: parseJsonFromText(completion.text), model: completion.model };
 }
-async function completeOpenAICompatibleJson(config: UserAiConfig, instruction: string, input: unknown, fetcher: typeof fetch = fetch, timeoutMs = 150_000) {
+/**
+ * 读者浏览器里存的模型名会过期：服务商下架某个 :free 变体后，请求直接 404，
+ * 而读者看到的只是「检查 Base URL、模型名和 key 是否正确」，于是每次都白重试。
+ * 这里准备一份兜底清单，配置里的模型失效时自动换一个可用的，读者无感。
+ */
+const MODEL_FALLBACKS: { host: string; models: string[] }[] = [
+  {
+    host: 'openrouter.ai',
+    models: [
+      'nex-agi/nex-n2.5-mini:free',
+      'nex-agi/nex-n2.5-pro:free',
+      'dots-studio/dots-3-note-preview:free',
+      'nvidia/nemotron-3-super-120b-a12b:free',
+    ],
+  },
+];
+function fallbackModels(baseUrl: string, current: string) {
+  try {
+    const host = new URL(baseUrl).hostname;
+    const hit = MODEL_FALLBACKS.find((item) => host === item.host || host.endsWith(`.${item.host}`));
+    return (hit?.models || []).filter((model) => model !== current);
+  } catch {
+    return [];
+  }
+}
+/** 上游的报错正文（OpenRouter 会把真正原因写在 error.message 里）——原样带给读者，别再吞掉。 */
+export async function upstreamMessage(response: Response) {
+  try {
+    const text = (await response.text()).slice(0, 400);
+    try {
+      const data = JSON.parse(text) as { error?: { message?: string } | string; message?: string };
+      const message = typeof data.error === 'string' ? data.error : data.error?.message || data.message;
+      if (message) return String(message).slice(0, 240);
+    } catch {
+      /* 不是 json 就退回纯文本 */
+    }
+    return text.replace(/\s+/g, ' ').trim().slice(0, 240);
+  } catch {
+    return '';
+  }
+}
+/** 404，或 400 里点名模型不合法——都说明是模型名的问题，换一个模型就能救。 */
+function isModelError(status: number, detail: string) {
+  if (status === 404) return true;
+  return status === 400 && /not a valid model|model is unavailable|No endpoints|valid model/i.test(detail);
+}
+async function completeOpenAICompatibleJson(config: UserAiConfig, instruction: string, input: unknown, fetcher: typeof fetch = fetch, timeoutMs = 150_000, deadline?: number): Promise<{ text: string; model: string }> {
   if (!config.apiKey || !config.baseUrl || !config.model) throw new Error('USER_MODEL_CONFIG_INVALID');
-  const body = {
-      model: config.model,
-      messages: [{ role: 'system', content: instruction }, { role: 'user', content: JSON.stringify(input) }],
-      temperature: 0.35,
-      max_tokens: 16000,
-      response_format: { type: 'json_object' },
-    };
-  const request = (payload: Record<string, unknown>) => fetcher(`${config.baseUrl}/chat/completions`, {
+  const request = (payload: Record<string, unknown>, ms: number) => fetcher(`${config.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: { authorization: `Bearer ${config.apiKey}`, 'content-type': 'application/json' },
     body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: AbortSignal.timeout(ms),
   });
-  let r = await request(body);
-  if (r.status === 400 || r.status === 422) {
-    const plainBody = { ...body } as Record<string, unknown>;
-    delete plainBody.response_format;
-    r = await request(plainBody);
+  const candidates = [config.model, ...fallbackModels(config.baseUrl, config.model)];
+  let failure = 'USER_MODEL_EMPTY';
+  for (const model of candidates) {
+    // 整次生成共用一个总预算，换模型也不能把读者的等待时间无限拉长。
+    const remaining = deadline ? deadline - Date.now() : timeoutMs;
+    if (remaining < 5_000) {
+      failure = 'MODEL_BUDGET_EXHAUSTED：模型还没写完就到时间了';
+      break;
+    }
+    const attemptMs = Math.min(timeoutMs, remaining);
+    const body = {
+      model,
+      messages: [{ role: 'system', content: instruction }, { role: 'user', content: JSON.stringify(input) }],
+      temperature: 0.35,
+      // 16k 是实测值：这个模型写完正文前要先花掉约 4300 个推理 token，
+      // 上限压到 6000 会 finish_reason=length，JSON 直接被截断。
+      max_tokens: 16000,
+      response_format: { type: 'json_object' },
+    };
+    let r = await request(body, attemptMs);
+    if (r.status === 400 || r.status === 422) {
+      const plainBody = { ...body } as Record<string, unknown>;
+      delete plainBody.response_format;
+      r = await request(plainBody, Math.min(attemptMs, Math.max(5_000, (deadline || Date.now() + attemptMs) - Date.now())));
+    }
+    if (r.ok) {
+      const rawResponse = await r.json() as { choices?: { message?: { content?: string }; text?: string }[]; response?: string; text?: string; content?: string };
+      const text = extractTextFromAiResponse(rawResponse);
+      if (text) return { text, model };
+      failure = `USER_MODEL_EMPTY：${model} 返回了空内容`;
+      continue;
+    }
+    const detail = await upstreamMessage(r);
+    failure = `USER_MODEL_HTTP_${r.status}${detail ? `：${detail}` : ''}`;
+    // 只有「模型不存在」值得换一个再试；钥匙错、被限流、上游 5xx 换模型没用。
+    if (!isModelError(r.status, detail)) break;
+    console.error(JSON.stringify({ event: 'user_model_fallback', from: model, status: r.status }));
   }
-  if (!r.ok) throw new Error(`USER_MODEL_HTTP_${r.status}`);
-  const rawResponse = await r.json() as { choices?: { message?: { content?: string }; text?: string }[]; response?: string; text?: string; content?: string };
-  const text = extractTextFromAiResponse(rawResponse);
-  if (!text) throw new Error('USER_MODEL_EMPTY');
-  return text;
+  throw new Error(failure);
 }
 function extractTextFromAiResponse(x: unknown): string {
   if (typeof x === 'string') return x;
@@ -155,52 +222,6 @@ export function fallbackSvg(title: string) {
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return `data:image/svg+xml;base64,${btoa(binary)}`;
 }
-function fallbackJourneyChapter(title: string, sourceUrl: string, sourceText: string) {
-  if (/西游记|西遊記/.test(title)) {
-    return {
-      chapterTitle: '第一回 灵根育孕源流出 心性修持大道生',
-      chapter: [
-        '东胜神洲傲来国海外有一座花果山。山顶有一块仙石，日日受天真地秀、日精月华，久而久之生出灵性。一天石头裂开，化出一个石猴。他一出生就会走会拜，眼里放出金光，惊动了天宫。',
-        '石猴很快和山里的猴群混在一起。他们白天在山林里摘果饮泉，夜里靠山洞、石崖安歇，日子自在。有一回天气炎热，猴群顺着山涧玩水，发现水流尽头是一挂瀑布。',
-        '众猴说，谁敢钻进瀑布，找到源头又平安出来，就拜谁为王。石猴应声跳出，闭眼纵身穿过水帘。瀑布后面并不是死路，而是一座天然石洞，里面有石锅、石灶、石床、石凳，像早已等着主人。',
-        '石猴出来告诉大家，瀑布后有安身之处。猴群跟着他跳入水帘洞，果然看见宽敞洞府。众猴遵守约定，拜石猴为王，从此称他为美猴王。',
-        '做了王以后，美猴王享乐多年，忽然在宴席间落泪。他想到猴群虽然自在，却终究逃不过老病死亡。这个念头让他不再满足于眼前的快活，决定离开花果山，去寻访长生不老的方法。',
-        '他扎了木筏，漂洋过海，先到南赡部洲，又辗转来到西牛贺洲。一路上他学人说话、穿衣、行礼，也看见世人奔忙逐利，却少有人真正追问生死。',
-        '后来，美猴王在灵台方寸山、斜月三星洞找到须菩提祖师。祖师看出他不是凡类，问明来历后收他为徒，并按排行赐名孙悟空。',
-        '这一回从石猴出世写到孙悟空拜师。故事真正推动的不是“天生神奇”本身，而是他从安乐中意识到生命有限，于是主动离开熟悉的花果山，去寻找改变命运的路。',
-      ],
-      originalEvidence: [
-        { adapted: '石猴穿过瀑布，发现水帘洞。', original: '径跳入瀑布泉中', note: '这是他成为猴王的关键行动。' },
-        { adapted: '美猴王因想到死亡而离山求道。', original: '今日虽不归人王法律，不惧禽兽威服，将来年老血衰，暗中有阎王老子管着', note: '求长生的动机来自对死亡的意识。' },
-      ],
-      quiz: {
-        question: '石猴为什么会从花果山的快乐生活走向拜师求道？',
-        options: ['他被猴群赶出了水帘洞', '他意识到自在生活仍然逃不过死亡', '天宫命令他必须去学本领', '他只是想证明自己比别人聪明'],
-        correctIndex: 1,
-        rightFeedback: '对。关键不是眼前过得不好，而是他想到将来会老、会死，所以主动寻找出路。',
-        wrongFeedback: ['猴群已经拜他为王，并没有赶走他。', '对。这个选项抓住了行动的真正原因。', '原文没有写天宫命令他求道，这是无证据补充。', '好胜不是这一回离山的主要原因，这只看到他性格的一面。'],
-      },
-      imageCue: { prompt: 'A stone monkey leaping through a waterfall into a hidden cave on a mythical mountain, Chinese classic storybook illustration, no text', afterParagraph: 3 },
-      image: fallbackSvg('西游记 第一回'),
-      source: sourceUrl,
-      model: 'built-in-classic-fallback',
-      imageModel: 'built-in-svg-fallback',
-      parts: 0,
-    };
-  }
-  const paragraphs = sourceText.replace(/\s+/g, ' ').match(/.{1,260}(?:。|！|？|；|$)/g)?.slice(0, 8).map(x => toSimplifiedText(x.trim())).filter(Boolean) || [];
-  return {
-    chapterTitle: `${title} 第一章`,
-    chapter: ['这一章的原文已经找到，但在线 AI 暂时没有稳定返回合格改写。', '为了避免把原文直接冒充成改写，系统没有展示未通过检查的内容。', '请稍后刷新或换用个人 API key 重新生成，成功后会按固定模板显示完整章节。', '当前页面仍保留来源、插图和小考察结构，但正式阅读内容必须等合格改写生成后保存。'],
-    quiz: { question: '这一章当前最可靠的信息是什么？', options: ['已经找到可核验原文', '没有任何来源', '人物关系已经全部改写完', '图片来自原书扫描'], correctIndex: 0, rightFeedback: '对，原文来源已经解析成功。', wrongFeedback: ['对。', '来源已经解析成功。', 'AI 额度恢复前不能这样断定。', '当前图片是系统占位插图。'] },
-    imageCue: { prompt: `${IMAGE_STYLE_PROMPT} Scene: ${title}`, afterParagraph: Math.max(1, Math.min(3, paragraphs.length || 2)) },
-    image: fallbackSvg(title),
-    source: sourceUrl,
-    model: 'built-in-source-fallback',
-    imageModel: 'built-in-svg-fallback',
-    parts: 0,
-  };
-}
 export function validateParagraphs(x: unknown): string[] { if (!Array.isArray(x) || !x.length || !x.every(p => typeof p === 'string' && p.trim())) throw new Error('INVALID_PARAGRAPHS'); return x.map((p) => toSimplifiedText(String(p).trim())); }
 export function validateQuiz(x: unknown) {
   if (!x || typeof x !== 'object') throw new Error('INVALID_QUIZ');
@@ -284,7 +305,7 @@ async function createIllustration(env: JobEnv, title: string, aiConfig: UserAiCo
  * normalizeEvidence 只会静默返回空数组，读者那边整块折叠证据就消失了。
  * 这里单独补一次小请求；补不上也只是少一块证据，绝不能因此把已写好的正文判成失败。
  */
-async function topUpEvidence(env: JobEnv, p: JobParams, adapted: string[], timeoutMs: number) {
+async function topUpEvidence(env: JobEnv, p: JobParams, adapted: string[], timeoutMs: number, deadline?: number) {
   if (!adapted.length) return [];
   try {
     const repair = await completeJsonResult(env, [
@@ -292,14 +313,14 @@ async function topUpEvidence(env: JobEnv, p: JobParams, adapted: string[], timeo
       '输入字段：source 是本章原文；adapted 是已经写好的改写段落。',
       '要求：adapted 必须是改写里真实出现过的句子；original 必须是 source 里对应的原句，不超过 30 字或 20 个英文词；note 说明改写相对原文做了什么处理。',
       '输出 schema：{"originalEvidence":[{"adapted":"...","original":"...","note":"..."}]}',
-    ].join('\n'), { source: p.sourceText, adapted }, p.aiConfig, fetch, timeoutMs);
+    ].join('\n'), { source: p.sourceText, adapted }, p.aiConfig, fetch, timeoutMs, deadline);
     return normalizeEvidence((repair.json as { originalEvidence?: unknown }).originalEvidence);
   } catch (error) {
     console.error(JSON.stringify({ event: 'evidence_topup_failed', error: error instanceof Error ? error.message : String(error) }));
     return [];
   }
 }
-async function rewriteWholeChapter(env: JobEnv, p: JobParams, timeoutMs: number, models: Set<string>) {
+async function rewriteWholeChapter(env: JobEnv, p: JobParams, timeoutMs: number, models: Set<string>, deadline?: number) {
   const result = await completeJsonResult(env, [
         '任务：把这整章原文一次性改写成适合读者的完整章节。',
         '输入字段：title 是书名；chapterNumber 是章节序号；profile 是读者偏好；source 是本章原文。',
@@ -307,14 +328,14 @@ async function rewriteWholeChapter(env: JobEnv, p: JobParams, timeoutMs: number,
         '改写要求：必须从本章开端写到结尾，保留事件链、人物行动、因果和结尾状态。正文要像给真实读者写的章节，不能直接搬运原文句式。',
         '插图要求：imageCue.prompt 只能描述一个具体关键场景，并使用 elegant Chinese classic picture-book illustration, warm ink wash and mineral pigment colors, delicate linework, clear characters, clear action, no text。',
         '输出 schema：{"chapterTitle":"标题","chapter":["改写后的简体中文自然段"],"originalEvidence":[{"adapted":"改写中的关键句","original":"不超过30字或20个英文词的原文证据","note":"比较说明"}],"quiz":{"question":"推理题","options":["A","B","C","D"],"correctIndex":0,"rightFeedback":"解析","wrongFeedback":["A解析","B解析","C解析","D解析"]},"imageCue":{"prompt":"English description of one accurate illustrated scene, elegant Chinese classic picture-book illustration, warm ink wash and mineral pigment colors, clear characters and action, no text","afterParagraph":3}}',
-      ].join('\n'), { title: p.title, chapterNumber: p.chapterNumber || 1, profile: p.profile, source: p.sourceText }, p.aiConfig, fetch, timeoutMs);
+      ].join('\n'), { title: p.title, chapterNumber: p.chapterNumber || 1, profile: p.profile, source: p.sourceText }, p.aiConfig, fetch, timeoutMs, deadline);
   const x = result.json;
   if (typeof x.chapterTitle !== 'string') throw new Error('INVALID_TITLE');
   const content = simplifyValue({ chapterTitle: x.chapterTitle, chapter: validateParagraphs(x.chapter), originalEvidence: normalizeEvidence(x.originalEvidence), quiz: validateQuiz(x.quiz), imageCue: validateImageCue(x.imageCue) });
   if (looksCopiedFromSource(content.chapter, p.sourceText)) throw new Error('OUTPUT_TOO_CLOSE_TO_SOURCE');
   models.add(result.model);
   if (!content.originalEvidence.length) {
-    const evidence = await topUpEvidence(env, p, content.chapter, timeoutMs);
+    const evidence = await topUpEvidence(env, p, content.chapter, timeoutMs, deadline);
     if (evidence.length) content.originalEvidence = evidence;
   }
   return content;
@@ -337,10 +358,14 @@ export async function generateAdaptedChapter(env: JobEnv, p: JobParams) {
     throw new Error('USER_KEY_REQUIRED');
   }
   const models = new Set<string>();
+  // 一次生成的总预算。读者的浏览器要一直挂着这个请求，所以必须有上限：
+  // 超过就报错让他重试或换线路，而不是继续拼下去。
+  const deadline = Date.now() + 180_000;
+  const budget = (base: number) => Math.min(base, deadline - Date.now());
   try {
-    // 12 秒对绝大多数模型都不够（免费档整章改写通常要 20-40 秒），会让单遍改写
-    // 必然超时、退回分段路径，而分段路径不产出原文证据。给足时间，让正常模型一遍过。
-    const fast = await rewriteWholeChapter(env, p, 55_000, models);
+    // 实测：免费档模型整章一遍过约 27 秒（推理 token 占大头），但高峰期会翻倍。
+    // 之前只给 55 秒，正常模型也常被判超时、被迫退回分段路径。
+    const fast = await rewriteWholeChapter(env, p, budget(90_000), models, deadline);
     const illustration = await createIllustration(env, p.title, p.aiConfig, fast.imageCue.prompt);
     return { ...fast, image: illustration.image, source: p.sourceUrl, model: [...models].join(', '), imageModel: illustration.imageModel, parts: 1 };
   } catch (fastError) {
@@ -357,7 +382,7 @@ export async function generateAdaptedChapter(env: JobEnv, p: JobParams) {
         '固定模板：paragraphs 只放改写后的现代简体中文白话文，每段 90-190 字；summary 只记事实链。',
         '改写要求：只处理当前分段，保持原文事件顺序，写成可与前后段自然拼接的叙述。不能整段照抄原文，不能输出繁体字。',
         '输出 schema：{"paragraphs":["改写后的简体中文自然段"],"summary":"事件链事实摘要"}',
-      ].join('\n'), { title: p.title, profile: p.profile, part: i + 1, total: chunks.length, source }, p.aiConfig, fetch, 35_000);
+      ].join('\n'), { title: p.title, profile: p.profile, part: i + 1, total: chunks.length, source }, p.aiConfig, fetch, budget(45_000), deadline);
       const paragraphs = validateParagraphs(result.json.paragraphs);
       if (looksCopiedFromSource(paragraphs, source)) throw new Error('OUTPUT_TOO_CLOSE_TO_SOURCE');
       return { index: i, model: result.model, paragraphs, summary: typeof result.json.summary === 'string' ? toSimplifiedText(result.json.summary.slice(0, 400)) : '' };
@@ -369,17 +394,14 @@ export async function generateAdaptedChapter(env: JobEnv, p: JobParams) {
     });
   } catch (error) {
     if (isUserConfigError(error)) throw error;
+    // 站点不再提供共用线路，所以这里绝不能再返回内置占位章节充当结果——
+    // 那会让读者以为生成成功了，实际读到的是一段模板话。
     console.error(JSON.stringify({ event: 'workflow_text_split_failed', error: error instanceof Error ? error.message : String(error) }));
-    try {
-      const retry = await rewriteWholeChapter(env, p, 70_000, models);
-      const illustration = await createIllustration(env, p.title, p.aiConfig, retry.imageCue.prompt);
-      return { ...retry, image: illustration.image, source: p.sourceUrl, model: [...models].join(', '), imageModel: illustration.imageModel, parts: 1 };
-    } catch (retryError) {
-      if (isUserConfigError(retryError)) throw retryError;
-      console.error(JSON.stringify({ event: 'workflow_text_fallback', error: retryError instanceof Error ? retryError.message : String(retryError) }));
-      return fallbackJourneyChapter(p.title, p.sourceUrl, p.sourceText);
-    }
+    throw error;
   }
+  // 预算被挤压时模型容易只写两三段就收尾，前端要求至少 4 段。
+  // 与其把残章发出去让读者看到「结果格式不完整」，不如在这里就报错重来。
+  if (chapter.length < 4) throw new Error(`INCOMPLETE_CHAPTER：只写出 ${chapter.length} 段`);
   let metadata;
   try {
     const result = await completeJsonResult(env, [
@@ -388,17 +410,18 @@ export async function generateAdaptedChapter(env: JobEnv, p: JobParams) {
       '题目要求：一个最佳答案和三个有迷惑性的错误答案，错误答案必须可解释。',
       '插图要求：imageCue.prompt 只能描述一个具体关键场景，并使用 elegant Chinese classic picture-book illustration, warm ink wash and mineral pigment colors, delicate linework, clear characters, clear action, no text。',
       '输出 schema：{"chapterTitle":"标题","quiz":{"question":"推理题","options":["A","B","C","D"],"correctIndex":0,"rightFeedback":"解析","wrongFeedback":["A解析","B解析","C解析","D解析"]},"imageCue":{"prompt":"English description of one accurate illustrated scene, elegant Chinese classic picture-book illustration, warm ink wash and mineral pigment colors, clear characters and action, no text","afterParagraph":3}}',
-    ].join('\n'), { title: p.title, profile: p.profile, events: summaries }, p.aiConfig, fetch, 30_000);
+    ].join('\n'), { title: p.title, profile: p.profile, events: summaries }, p.aiConfig, fetch, budget(30_000), deadline);
     const x = result.json; models.add(result.model);
     if (typeof x.chapterTitle !== 'string') throw new Error('INVALID_METADATA');
     metadata = simplifyValue({ chapterTitle: x.chapterTitle, quiz: validateQuiz(x.quiz), imageCue: validateImageCue(x.imageCue) });
   } catch (metadataError) {
     if (isUserConfigError(metadataError)) throw metadataError;
     console.error(JSON.stringify({ event: 'workflow_metadata_fallback', error: metadataError instanceof Error ? metadataError.message : String(metadataError) }));
+    // 正文是真的，题目退化成内置模板还能接受（读者读到的仍是自己那章）。
     metadata = fallbackMetadata(p.title, summaries, p.sourceText);
   }
   const illustration = await createIllustration(env, p.title, p.aiConfig, metadata.imageCue.prompt);
   // 分段路径原来完全不产出原文证据，读者在降级情况下会少掉整块折叠证据。这里补上。
-  const evidence = await topUpEvidence(env, p, chapter, 25_000);
+  const evidence = await topUpEvidence(env, p, chapter, budget(25_000), deadline);
   return { ...metadata, chapter: simplifyValue(chapter), originalEvidence: evidence, image: illustration.image, source: p.sourceUrl, model: [...models].join(', ') || 'unknown', imageModel: illustration.imageModel, parts: chunks.length };
 }

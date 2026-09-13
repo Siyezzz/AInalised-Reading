@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { Check, ExternalLink, KeyRound, X } from 'lucide-react';
-import { AI_SETUP_DONE_KEY, OPEN_AI_SETUP, apiPresets, readAiSettings, saveAiSettings } from './lib/ai-presets';
+import { AI_SETUP_DONE_KEY, OPEN_AI_SETUP, apiPresets, describeLineTest, readAiSettings, saveAiSettings, testAiLine, type LineTest } from './lib/ai-presets';
 
 /**
  * 首次进入站点时的线路引导。
@@ -19,6 +19,8 @@ export default function AiSetup() {
   const [showImage, setShowImage] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<LineTest | null>(null);
 
   useEffect(() => {
     try {
@@ -37,6 +39,7 @@ export default function AiSetup() {
     const reopen = () => {
       setError('');
       setSaved(false);
+      setTestResult(null);
       setOpen(true);
     };
     window.addEventListener(OPEN_AI_SETUP, reopen);
@@ -63,21 +66,36 @@ export default function AiSetup() {
       setApiModel(preset.model);
     }
     setError('');
+    setTestResult(null);
+  }
+
+  function currentSettings(): Record<string, string> | null {
+    if (!apiBaseUrl.trim() || !apiModel.trim() || apiKey.trim().length < 8) {
+      setError('Base URL、模型名和 API key 都要填完整。');
+      return null;
+    }
+    const settings: Record<string, string> = { aiProvider: 'openai-compatible', apiBaseUrl: apiBaseUrl.trim(), apiModel: apiModel.trim(), apiKey: apiKey.trim() };
+    if (imageModel.trim()) settings.imageModel = imageModel.trim();
+    return settings;
   }
 
   function saveKey() {
-    if (!apiBaseUrl.trim() || !apiModel.trim() || apiKey.trim().length < 8) {
-      setError('Base URL、模型名和 API key 都要填完整。');
-      return;
-    }
-    const settings: Record<string, string> = {
-      aiProvider: 'openai-compatible',
-      apiBaseUrl: apiBaseUrl.trim(),
-      apiModel: apiModel.trim(),
-      apiKey: apiKey.trim(),
-    };
-    if (imageModel.trim()) settings.imageModel = imageModel.trim();
+    const settings = currentSettings();
+    if (!settings) return;
     finish(settings);
+  }
+
+  async function runTest() {
+    const settings = currentSettings();
+    if (!settings) return;
+    setError('');
+    setTestResult(null);
+    setTesting(true);
+    try {
+      setTestResult(await testAiLine(settings));
+    } finally {
+      setTesting(false);
+    }
   }
 
   function dismiss() {
@@ -178,6 +196,11 @@ export default function AiSetup() {
               </a>
             )}
             {error && <p className="ai-setup-error">{error}</p>}
+            {testResult && (
+              <p className={`ai-setup-test ${testResult.ok ? 'ok' : 'bad'}`} role="status">
+                {describeLineTest(testResult)}
+              </p>
+            )}
           </div>
 
           <div className="ai-setup-links">
@@ -195,6 +218,9 @@ export default function AiSetup() {
 
         <footer>
           <div className="ai-setup-actions">
+            <button type="button" className="ai-setup-test-btn" onClick={runTest} disabled={testing}>
+              {testing ? '测试中…' : '测试这条线路'}
+            </button>
             <button type="button" onClick={saveKey}>
               保存并开始
             </button>

@@ -38,3 +38,6 @@ yarn-error.log*
 .pnpm-debug.log*
 
 ai-worker/.wrangler/
+
+# 构建产物，每次 build 都会变，不该进仓库
+*.tsbuildinfo

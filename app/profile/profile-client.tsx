@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Check, ChevronRight, Search } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import BrandMark from '../brand-mark';
-import { apiPresets, readAiSettings, saveAiSettings } from '../lib/ai-presets';
+import { apiPresets, describeLineTest, readAiSettings, saveAiSettings, testAiLine, type LineTest } from '../lib/ai-presets';
 
 export default function ProfileClient({ email }: { email: string }) {
   const params = useSearchParams();
@@ -20,7 +20,9 @@ export default function ProfileClient({ email }: { email: string }) {
     [apiKey, setApiKey] = useState(''),
     [imageModel, setImageModel] = useState(''),
     [modelSaved, setModelSaved] = useState(false),
-    [modelError, setModelError] = useState('');
+    [modelError, setModelError] = useState(''),
+    [testing, setTesting] = useState(false),
+    [testResult, setTestResult] = useState<LineTest | null>(null);
   const keyApply = apiPresets.find((item) => item.id === apiPreset);
   useEffect(() => {
     fetch('/api/profile')
@@ -57,11 +59,11 @@ export default function ProfileClient({ email }: { email: string }) {
     });
     if (response.ok) setSaved(true);
   }
-  function saveModelSettings() {
+  function modelSettings(): Record<string, string> | null {
     if (!apiBaseUrl.trim() || !apiModel.trim() || apiKey.trim().length < 8) {
       setModelError('Base URL、模型名和 API key 都要填完整，key 至少 8 位。');
       setModelSaved(false);
-      return;
+      return null;
     }
     const value: Record<string, string> = {
       aiProvider: 'openai-compatible',
@@ -70,10 +72,27 @@ export default function ProfileClient({ email }: { email: string }) {
       apiKey: apiKey.trim(),
     };
     if (imageModel.trim()) value.imageModel = imageModel.trim();
+    return value;
+  }
+  function saveModelSettings() {
+    const value = modelSettings();
+    if (!value) return;
     // 统一写入口：会广播变更事件，正在改写的章节页收到后自动继续。
     saveAiSettings(value);
     setModelError('');
     setModelSaved(true);
+  }
+  async function testModelSettings() {
+    const value = modelSettings();
+    if (!value) return;
+    setModelError('');
+    setTestResult(null);
+    setTesting(true);
+    try {
+      setTestResult(await testAiLine(value));
+    } finally {
+      setTesting(false);
+    }
   }
   function choosePreset(id: string) {
     setApiPreset(id);
@@ -83,6 +102,7 @@ export default function ProfileClient({ email }: { email: string }) {
     if (preset.model) setApiModel(preset.model);
     setModelSaved(false);
     setModelError('');
+    setTestResult(null);
   }
   async function startReading() {
     if (!book || bookStatus === 'saving') return;
@@ -213,9 +233,19 @@ export default function ProfileClient({ email }: { email: string }) {
               <input value={imageModel} onChange={(event) => { setImageModel(event.target.value); setModelSaved(false); setModelError(''); }} placeholder="留空则用内置插图，例如 gpt-image-1" />
             </label>
             {modelError && <p className="model-settings-error" role="alert">{modelError}</p>}
-            <button type="button" className="save-model" onClick={saveModelSettings}>
-              {modelSaved ? '模型已保存' : '保存模型设置'}
-            </button>
+            {testResult && (
+              <p className={`model-settings-test ${testResult.ok ? 'ok' : 'bad'}`} role="status">
+                {describeLineTest(testResult)}
+              </p>
+            )}
+            <div className="model-settings-actions">
+              <button type="button" className="test-model" onClick={testModelSettings} disabled={testing}>
+                {testing ? '测试中…' : '测试这条线路'}
+              </button>
+              <button type="button" className="save-model" onClick={saveModelSettings}>
+                {modelSaved ? '模型已保存' : '保存模型设置'}
+              </button>
+            </div>
           </fieldset>
           <button className="save-profile" onClick={save}>
             {saved ? (
