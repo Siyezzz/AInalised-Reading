@@ -1,33 +1,3 @@
-export type ApiPreset = {
-  id: string;
-  name: string;
-  baseUrl: string;
-  model: string;
-  note: string;
-  keyUrl?: string;
-  free?: boolean;
-};
-
-/**
- * 站内可选的 OpenAI-compatible 线路。keyUrl 是官方申请免费 key 的入口，
- * 首次进入站点时的引导弹窗和 /profile 的「改写模型」区块共用这份清单。
- */
-export const apiPresets: ApiPreset[] = [
-  { id: 'agnes', name: 'Agnes', baseUrl: 'https://apihub.agnes-ai.cn/v1', model: 'agnes-2.5-flash', note: '国内直连、当前免费；实测整章 18.9 秒（约 4800 token），两条里最快，推荐先用这条', keyUrl: 'https://platform.agnes-ai.cn', free: true },
-  { id: 'qwen', name: '通义千问（阿里云百炼）', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-flash', note: '付费首选：国内直连，实测整章 24 秒、4800 token，每章约 0.4 分钱，比 DeepSeek 还便宜；想更好质量把 Model 改成 qwen3.8-flash（但那是思考型模型，会慢很多）', keyUrl: 'https://bailian.console.aliyun.com/' },
-  { id: 'zhipu', name: '智谱 GLM', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash', note: '国内直连，GLM-4-Flash 免费，新用户另有 2000 万 token；免费额度最大的一条', keyUrl: 'https://open.bigmodel.cn/usercenter/apikeys', free: true },
-  { id: 'tokenharbor', name: 'Token Harbor', baseUrl: 'https://tokenharbor.ai/v1', model: 'deepseek-v4.1-flash:free', note: '免费模型，国内可直连；但被限速，实测整章要 118 秒（且多烧 1 万 token），只适合短章节，慢就换 Agnes', keyUrl: 'https://tokenharbor.ai/dashboard', free: true },
-  { id: 'gemini', name: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash', note: '免费层每天 1440 次请求，改写一章只要 4～10 次，基本用不完；国内需要自备网络', keyUrl: 'https://aistudio.google.com/apikey', free: true },
-  { id: 'groq', name: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'qwen/qwen3.8-27b', note: '免费额度，速度极快，推荐先试', keyUrl: 'https://console.groq.com/keys', free: true },
-  { id: 'openrouter', name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'nex-agi/nex-n2.5-mini:free', note: '免费档每天只有 50 次请求，改写一章要 4～10 次，用几天就会用完；额度不够时建议换 Groq 或 Gemini', keyUrl: 'https://openrouter.ai/keys', free: true },
-  { id: 'siliconflow', name: '硅基流动', baseUrl: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen2.5-7B-Instruct', note: '国内直连，9B 以下模型永久免费、新用户送 2000 万 token；小模型改写质量有限，长章节可换付费模型', keyUrl: 'https://cloud.siliconflow.cn/account/ak', free: true },
-  { id: 'deepseek', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', note: '没有免费额度但最便宜：改写一章约 5 千 token，成本约 1 分钱，中文长文本质量好', keyUrl: 'https://platform.deepseek.com/api_keys' },
-  { id: 'moonshot', name: 'Moonshot Kimi', baseUrl: 'https://api.moonshot.cn/v1', model: 'kimi-k2-0711-preview', note: '中文长文本可试', keyUrl: 'https://platform.moonshot.cn/console/api-keys' },
-  { id: 'openai', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4.1-mini', note: '稳定，通常需要付费余额', keyUrl: 'https://platform.openai.com/api-keys' },
-  { id: 'together', name: 'Together AI', baseUrl: 'https://api.together.xyz/v1', model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', note: '常见开源大模型接口', keyUrl: 'https://api.together.xyz/settings/api-keys' },
-  { id: 'custom', name: '自定义 OpenAI-compatible', baseUrl: '', model: '', note: '填供应商给你的 /v1 地址和模型名' },
-];
-
 export const AI_SETTINGS_KEY = 'zhiji-ai-settings';
 export const AI_SETUP_DONE_KEY = 'zhiji-ai-setup-done';
 
@@ -124,15 +94,14 @@ function describeQuota(quota?: LineTest['quota']) {
   if (!quota) return '';
   if (typeof quota.usedPct === 'number') {
     const reset = quota.resetsAt ? `，${quota.resetsAt.slice(0, 10)} 重置` : '';
-    return `（免费额度已用 ${quota.usedPct}%${reset}；改写一章大约要 4～10 次请求）`;
+    return `（额度已用 ${quota.usedPct}%${reset}）`;
   }
-  return `（今日免费额度还剩 ${quota.remaining}/${quota.limit} 次；改写一章大约要 4～10 次请求）`;
+  return `（今日额度还剩 ${quota.remaining}/${quota.limit} 次）`;
 }
 
 /** 把一次线路测试的结果说成一句人话。 */
 export function describeLineTest(result: LineTest) {
-  // 免费额度必须一起报出来：一次小请求能过，不代表还够跑完一章。
-  // 之前读者看到「可用」就去改写了，结果写一半额度用光，页面只说「改写失败」。
+  // 把额度信息一并报出来：一次小请求能过，不代表还够跑完一章。
   const quota = describeQuota(result.quota);
   if (result.ok) {
     return `线路可用：${result.model} 在 ${result.ms ?? '-'}ms 内返回「${result.reply || '正常'}」${quota}`;

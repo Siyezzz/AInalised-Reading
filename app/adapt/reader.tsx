@@ -147,7 +147,7 @@ export default function AdaptReader() {
       setBusy(false);
       setProgress(0);
       setKeyIssue(true);
-      setError('还没有填写可用的 API key。站点不提供共用 AI 额度，请先填一个自己的 key（Groq、Gemini 都有免费额度）。');
+      setError('尚未接入 AI 服务。请先填入你信赖的服务商的接口地址、模型名和密钥。');
       return;
     }
     setKeyIssue(false);
@@ -229,7 +229,7 @@ export default function AdaptReader() {
         : lineIssue
           ? <>{!busy && <button onClick={retry}>重试失败步骤</button>}<button className="alert-action" onClick={openKeySetup}>换一条线路</button> <a href="/profile">去阅读画像设置</a></>
           : !busy && <><button onClick={retry}>重试失败步骤</button> <a href="/profile">检查 AI 线路设置</a></>}
-      {dailyQuota && <small className="alert-line">免费额度每天才重置一次，今天再点重试也不会成功。到「阅读画像」把服务商换成 Groq 或 Google Gemini 就好，那边的免费额度宽松得多。</small>}
+      {dailyQuota && <small className="alert-line">额度每天才重置一次，今天再点重试也不会成功。建议到「阅读画像」换一个额度更充裕的服务商。</small>}
       {lineIssue && !dailyQuota && <small className="alert-line">当前线路：{line}。模型可能已被服务商下架，换一个模型名或点「换一条线路」重新选。</small>}</div>}
     {notice && <p role="status">{notice}</p>}
     {prepared && !chapter && !busy && <section className="adapt-ready"><div><span>原文已就绪</span><h2>{prepared.title}</h2><p>已识别第 {chapterNumber} 章，共 {prepared.text.length.toLocaleString()} 字符。系统正在自动开始改写和配图，无需再操作。</p></div><details><summary>查看提取的第 {chapterNumber} 章原文</summary><pre>{prepared.text}</pre></details></section>}

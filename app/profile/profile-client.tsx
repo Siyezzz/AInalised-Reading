@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Check, ChevronRight, Search } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import BrandMark from '../brand-mark';
-import { apiPresets, describeLineTest, readAiSettings, saveAiSettings, testAiLine, type LineTest } from '../lib/ai-presets';
+import { describeLineTest, readAiSettings, saveAiSettings, testAiLine, type LineTest } from '../lib/ai-presets';
 
 export default function ProfileClient({ email }: { email: string }) {
   const params = useSearchParams();
@@ -14,16 +14,14 @@ export default function ProfileClient({ email }: { email: string }) {
     [saved, setSaved] = useState(false),
     [bookStatus, setBookStatus] = useState<'idle' | 'saving' | 'error'>('idle'),
     [bookError, setBookError] = useState(''),
-    [apiPreset, setApiPreset] = useState('groq'),
-    [apiBaseUrl, setApiBaseUrl] = useState('https://api.groq.com/openai/v1'),
-    [apiModel, setApiModel] = useState('qwen/qwen3.8-27b'),
+    [apiBaseUrl, setApiBaseUrl] = useState(''),
+    [apiModel, setApiModel] = useState(''),
     [apiKey, setApiKey] = useState(''),
     [imageModel, setImageModel] = useState(''),
     [modelSaved, setModelSaved] = useState(false),
     [modelError, setModelError] = useState(''),
     [testing, setTesting] = useState(false),
     [testResult, setTestResult] = useState<LineTest | null>(null);
-  const keyApply = apiPresets.find((item) => item.id === apiPreset);
   useEffect(() => {
     fetch('/api/profile')
       .then((r) => r.json())
@@ -43,9 +41,6 @@ export default function ProfileClient({ email }: { email: string }) {
       if (raw.apiModel) setApiModel(raw.apiModel);
       if (raw.apiKey) setApiKey(raw.apiKey);
       if (raw.imageModel) setImageModel(raw.imageModel);
-      const matched = apiPresets.find((item) => item.baseUrl && item.baseUrl === raw.apiBaseUrl);
-      if (matched) setApiPreset(matched.id);
-      else if (raw.apiBaseUrl) setApiPreset('custom');
     } catch { /* Ignore broken local settings. */ }
   }, []);
   function toggle(x: string) {
@@ -93,16 +88,6 @@ export default function ProfileClient({ email }: { email: string }) {
     } finally {
       setTesting(false);
     }
-  }
-  function choosePreset(id: string) {
-    setApiPreset(id);
-    const preset = apiPresets.find((item) => item.id === id);
-    if (!preset) return;
-    if (preset.baseUrl) setApiBaseUrl(preset.baseUrl);
-    if (preset.model) setApiModel(preset.model);
-    setModelSaved(false);
-    setModelError('');
-    setTestResult(null);
   }
   async function startReading() {
     if (!book || bookStatus === 'saving') return;
@@ -196,33 +181,15 @@ export default function ProfileClient({ email }: { email: string }) {
           <fieldset className="model-settings">
             <legend>改写模型</legend>
             <p className="model-settings-note">
-              站点不提供共用的 AI 额度，改写章节用的是你自己的 key。key 只存在这台浏览器里，不会上传到站点数据库。
+              填入你信赖的 AI 服务的接口信息，即可解锁章节的精讲与改写。密钥只保存在这台浏览器里，不会上传到服务器。
             </p>
             <label>
-              API 服务
-              <select value={apiPreset} onChange={(event) => choosePreset(event.target.value)}>
-                {apiPresets.map((preset) => (
-                  <option value={preset.id} key={preset.id}>
-                    {preset.name}
-                    {preset.free ? '（有免费额度）' : ''}
-                  </option>
-                ))}
-              </select>
-              {/* 说明放在下拉框外面：塞进 <option> 会把下拉框撑破容器宽度 */}
-              {keyApply?.note && <small className="model-settings-hint">{keyApply.note}</small>}
-            </label>
-            {keyApply?.keyUrl && (
-              <p className="api-key-apply">
-                没有 key？<a href={keyApply.keyUrl} target="_blank" rel="noreferrer">去 {keyApply.name} 免费申请</a>
-              </p>
-            )}
-            <label>
-              Base URL
-              <input value={apiBaseUrl} onChange={(event) => { setApiBaseUrl(event.target.value); setModelSaved(false); setModelError(''); }} placeholder="https://api.groq.com/openai/v1" />
+              接口地址（Base URL）
+              <input value={apiBaseUrl} onChange={(event) => { setApiBaseUrl(event.target.value); setModelSaved(false); setModelError(''); }} placeholder="https://api.example.com/v1" />
             </label>
             <label>
-              Model
-              <input value={apiModel} onChange={(event) => { setApiModel(event.target.value); setModelSaved(false); setModelError(''); }} placeholder="provider model id" />
+              模型名（Model）
+              <input value={apiModel} onChange={(event) => { setApiModel(event.target.value); setModelSaved(false); setModelError(''); }} placeholder="模型名，如 gpt-4.1-mini" />
             </label>
             <label>
               API key

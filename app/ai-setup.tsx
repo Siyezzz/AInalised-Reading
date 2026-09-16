@@ -1,19 +1,17 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Check, ExternalLink, KeyRound, X } from 'lucide-react';
-import { AI_SETUP_DONE_KEY, OPEN_AI_SETUP, apiPresets, describeLineTest, readAiSettings, saveAiSettings, testAiLine, type LineTest } from './lib/ai-presets';
+import { Check, KeyRound, X } from 'lucide-react';
+import { AI_SETUP_DONE_KEY, OPEN_AI_SETUP, describeLineTest, readAiSettings, saveAiSettings, testAiLine, type LineTest } from './lib/ai-presets';
 
 /**
- * 首次进入站点时的线路引导。
- * 站点不再提供自己的 AI 额度（共用 key 很快会被额度或限流打爆），
- * 所以这里要求读者填自己的 key，并直接给出免费 key 的申请入口。
- * 浏览书库、加入书架、填阅读画像这些不需要 key 的功能仍然可以跳过这步。
+ * 首次进入站点时的阅读引擎引导。
+ * 让读者接入自己信赖的 AI 服务，阅读体验完全由读者自己把控。
+ * 浏览书库、加入书架、填阅读画像这些功能仍然可以跳过这步。
  */
 export default function AiSetup() {
   const [open, setOpen] = useState(false);
-  const [presetId, setPresetId] = useState(apiPresets[0].id);
-  const [apiBaseUrl, setApiBaseUrl] = useState(apiPresets[0].baseUrl);
-  const [apiModel, setApiModel] = useState(apiPresets[0].model);
+  const [apiBaseUrl, setApiBaseUrl] = useState('');
+  const [apiModel, setApiModel] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [imageModel, setImageModel] = useState('');
   const [showImage, setShowImage] = useState(false);
@@ -58,20 +56,9 @@ export default function AiSetup() {
     setOpen(false);
   }
 
-  function choosePreset(id: string) {
-    setPresetId(id);
-    const preset = apiPresets.find((item) => item.id === id);
-    if (preset) {
-      setApiBaseUrl(preset.baseUrl);
-      setApiModel(preset.model);
-    }
-    setError('');
-    setTestResult(null);
-  }
-
   function currentSettings(): Record<string, string> | null {
     if (!apiBaseUrl.trim() || !apiModel.trim() || apiKey.trim().length < 8) {
-      setError('Base URL、模型名和 API key 都要填完整。');
+      setError('接口地址、模型名和 API key 都要填完整。');
       return null;
     }
     const settings: Record<string, string> = { aiProvider: 'openai-compatible', apiBaseUrl: apiBaseUrl.trim(), apiModel: apiModel.trim(), apiKey: apiKey.trim() };
@@ -107,14 +94,11 @@ export default function AiSetup() {
     setOpen(false);
   }
 
-  const current = apiPresets.find((item) => item.id === presetId) || apiPresets[0];
-  const keyLinks = apiPresets.filter((item) => item.keyUrl);
-
   if (saved && !open) {
     return (
       <output className="ai-setup-toast">
         <Check size={16} />
-        线路已保存，可以开始阅读了
+        阅读引擎已保存，可以开始阅读了
         <button type="button" aria-label="关闭提示" onClick={() => setSaved(false)}>
           <X size={14} />
         </button>
@@ -132,9 +116,9 @@ export default function AiSetup() {
             <KeyRound size={20} />
           </span>
           <div>
-            <h2 id="ai-setup-title">先填一个你自己的 API key</h2>
+            <h2 id="ai-setup-title">接入你的专属阅读引擎</h2>
             <p>
-              站点不提供共用的 AI 额度，改写章节消耗的是你自己的 key。浏览书库、加入书架、填阅读画像都不需要 key。
+              填入你信赖的 AI 服务的接口信息，即可解锁章节的精讲与改写。浏览书库、加入书架、填写阅读画像都无需这步。
             </p>
           </div>
           <button type="button" className="ai-setup-close" onClick={dismiss} aria-label="稍后设置">
@@ -155,25 +139,12 @@ export default function AiSetup() {
             }}
           >
             <label>
-              服务商
-              <select value={presetId} onChange={(event) => choosePreset(event.target.value)}>
-                {apiPresets.map((item) => (
-                  <option value={item.id} key={item.id}>
-                    {item.name}
-                    {item.free ? '（有免费额度）' : ''}
-                  </option>
-                ))}
-              </select>
-              {/* 说明放在下拉框外面：塞进 <option> 会把下拉框撑得比面板还宽 */}
-              {current.note && <span className="ai-setup-note">{current.note}</span>}
+              接口地址（Base URL）
+              <input value={apiBaseUrl} onChange={(event) => setApiBaseUrl(event.target.value)} placeholder="https://api.example.com/v1" />
             </label>
             <label>
-              Base URL
-              <input value={apiBaseUrl} onChange={(event) => setApiBaseUrl(event.target.value)} placeholder="https://api.groq.com/openai/v1" />
-            </label>
-            <label>
-              Model
-              <input value={apiModel} onChange={(event) => setApiModel(event.target.value)} placeholder="模型名" />
+              模型名（Model）
+              <input value={apiModel} onChange={(event) => setApiModel(event.target.value)} placeholder="模型名，如 gpt-4.1-mini" />
             </label>
             <label>
               API key
@@ -189,12 +160,6 @@ export default function AiSetup() {
                 想生成 AI 插图？填一个支持生图的模型名
               </button>
             )}
-            {current.keyUrl && (
-              <a className="ai-setup-apply" href={current.keyUrl} target="_blank" rel="noreferrer">
-                去 {current.name} 申请 key
-                <ExternalLink size={14} />
-              </a>
-            )}
             {error && <p className="ai-setup-error">{error}</p>}
             {testResult && (
               <p className={`ai-setup-test ${testResult.ok ? 'ok' : 'bad'}`} role="status">
@@ -202,24 +167,12 @@ export default function AiSetup() {
               </p>
             )}
           </div>
-
-          <div className="ai-setup-links">
-            <span>还没有 key？这些都是免费申请的：</span>
-            <div>
-              {keyLinks.map((item) => (
-                <a href={item.keyUrl} target="_blank" rel="noreferrer" key={item.id}>
-                  {item.name}
-                  {item.free ? ' 免费' : ''}
-                </a>
-              ))}
-            </div>
-          </div>
         </div>
 
         <footer>
           <div className="ai-setup-actions">
             <button type="button" className="ai-setup-test-btn" onClick={runTest} disabled={testing}>
-              {testing ? '测试中…' : '测试这条线路'}
+              {testing ? '测试中…' : '测试连接'}
             </button>
             <button type="button" onClick={saveKey}>
               保存并开始
